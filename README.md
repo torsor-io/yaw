@@ -80,38 +80,23 @@ print((X * Z * X).normalize())  # -Z
 
 ## Example: Quantum Teleportation
 
-Here's quantum teleportation in `yaw`, demonstrating algebraic operators, state functionals, and branching measurement:
+Here's quantum teleportation in `yaw`, demonstrating how we can build
+everything we want from scratch:
 
 ```python
-# Define Pauli algebra (qubits)
-$alg = <X, Z | herm, unit, anti>
+$alg = <X, Z | herm, unit, anti>       # defines algebra of qubits
 
-# Gates
-H = (X + Z) / sqrt(2)
-CNOT = ctrl(Z, [I, X])
+H = (X + Z) / sqrt(2)                  # defines Hadamard gate
+CNOT = ctrl(Z, [I, X])                 # defines CNOT
 
-# === Alice and Bob share entangled pair ===
-# Start with |00⟩
-psi00 = char(Z, 0) @ char(Z, 0)
+psi00 = char(Z, 0) @ char(Z, 0)        # defines |00⟩
 
-# Create Bell state: (H⊗I)|00⟩ then CNOT
-bell_start = (H @ I) << psi00
-bell_pair = CNOT << bell_start
+bell_start = (H @ I) << psi00          # defines |+0⟩
+bell_pair = CNOT << bell_start         # defines Bell pair
+psi_unknown = H << char(Z, 0)          # state Alice will teleport
+total = psi_unknown @ bell_pair        # total state
 
-# === Alice has unknown state |ψ⟩ = α|0⟩ + β|1⟩ ===
-# For demonstration, use |+⟩ state
-psi_unknown = H << char(Z, 0)
-
-# === Combine Alice's qubit with shared pair ===
-# Total state: |ψ⟩_A ⊗ |Φ+⟩_{AB}
-total = psi_unknown @ bell_pair
-
-# === Alice measures her two qubits in Bell basis ===
-# Create Bell basis projectors
-bell_00 = ((H @ I) << (char(Z, 0) @ char(Z, 0)))
-bell_01 = ((H @ I) << (char(Z, 0) @ char(Z, 1)))
-bell_10 = ((H @ I) << (char(Z, 1) @ char(Z, 0)))
-bell_11 = ((H @ I) << (char(Z, 1) @ char(Z, 1)))
+[[bell_{i}{j} = ((H @ I) << (char(Z, i) @ char(Z, j))) for i in range(2)] for j in range(2)]
 
 # Projectors onto Bell basis (first two qubits)
 [P_{k} = proj(Z, k) for k in range(4)]  # Simplified for demo
