@@ -1,4 +1,4 @@
-# yaw: Quantum Programming as Algebra
+# yaw: Algebraic Quantum Programming
 
 `yaw` is a quantum programming language where programs are elements of operator algebras, not circuit
 diagrams.
@@ -229,19 +229,13 @@ We welcome contributions! Areas where you can help:
 
 ## Philosophy
 
-yaw embodies several principles:
+`yaw` embodies several principles:
 
 - **Algebra first**: The mathematical structure *is* the program
 - **Hardware agnostic**: Write for the abstraction, compile to any backend
-- **Fault-tolerant native**: Designed for logical qubits, not NISQ workarounds
+- **Fault-tolerant native**: Designed for error-correction integration, not NISQ
 - **Composability**: Small pieces combine naturally
 - **Joy-coded**: If it's not beautiful, it's not done
-
-Traditional quantum computing: `Algorithm → Gates → Circuits → Hardware`
-
-yaw: `Algorithm → Algebra → λix → Any Hardware`
-
-The algebra layer is universal.
 
 ## Citation
 
@@ -250,10 +244,10 @@ If you use yaw in research, please cite:
 ```bibtex
 @software{yaw2025,
   author = {Wakeham, David},
-  title = {yaw: Quantum Programming as Algebra},
+  title = {yaw: Algebraic Quantum Programming},
   year = {2025},
   publisher = {Torsor Labs},
-  url = {https://github.com/torsorlabs/yaw},
+  url = {https://github.com/torsor-io/yaw},
   version = {0.1.0}
 }
 ```
@@ -270,7 +264,7 @@ yaw builds on rigorous mathematical physics:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+Apache 2.0 - see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
@@ -280,12 +274,8 @@ yaw builds on foundations from C*-algebra theory (Gelfand, Naimark, Segal), cate
 
 **David Wakeham**  
 Torsor Labs  
-[Email](mailto:david@torsorlabs.com) | [Website](https://torsorlabs.com)
-
-**Issues & Discussions**: [GitHub](https://github.com/torsorlabs/yaw)
+[Email](mailto:david@torsor.io) | [Website](https://torsor.io)
 
 ---
 
 *Made with love, coffee, and Claude.*
-
-*"Boolean algebra for qubits."*
