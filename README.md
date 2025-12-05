@@ -227,8 +227,6 @@ We welcome contributions! Areas where you can help:
 3. Submit a pull request
 4. We'll review and provide feedback
 
-Questions or ideas? Open a [Discussion](https://github.com/torsor-io/yaw/discussions) or [Issue](https://github.com/torsor-io/yaw/issues).
-
 ## Philosophy
 
 yaw embodies several principles:
