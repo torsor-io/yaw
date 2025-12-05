@@ -1,10 +1,13 @@
 # yaw: Quantum Programming as Algebra
 
-`yaw` (standing for **yaw algebraic way**) is a quantum programming
-language where programs are elements of operator algebras, not circuit
+`yaw` is a quantum programming language where programs are elements of operator algebras, not circuit
 diagrams.
 Using the power of math, `yaw` enables high-level, hardware
 agnostic, and fault tolerance-friendly code.
+Please note, it is currently a research prototype rather than a
+production language.
+As described below, it can be used a standalone language (with both
+functional and `Pythonic` elements) or imported directly as a package in `Python`.
 
 > *Syntax : semantics = algebra : Hilbert space.*
 
@@ -17,6 +20,14 @@ C*-algebra and the semantics by Hilbert space.
 "compile" to the usual Hilbert space vectors and matrices using
 something called the *Gelfand-Naimark-Segal* representation.
 So we don't abandon Hilbert space, just give it some help!
+
+> yaw algebraic way
+
+In terms of Euler angles, `yaw` (aspirationally) is the
+direction we're headed. However, it also stands for `yaw algebraic
+way`, a backronym which is not merely recursive, but
+*self-conjugating*, since `yaw⁻¹` = `way`.
+Someone had too much time on their hands.
 
 ## Quick Start
 
@@ -31,6 +42,9 @@ pip install -r requirements.txt  # Just sympy for now
 ### Three Ways to Use yaw
 
 **1. Interactive REPL**
+
+To dive in immediately, you can use the REPL:
+
 ```bash
 python -m yaw.yaw_repl
 ```
@@ -43,12 +57,19 @@ X
 ```
 
 **2. Compile to Python**
+
+You can use the same syntax in `.yaw` files and compile to `Python`
+using `yawc.py`:
+
 ```bash
 python -m yaw.yawc protocol.yaw -o protocol.py
 python protocol.py
 ```
 
 **3. Import as Library**
+Finally, if you prefer, you can work with `yaw` as a package in
+`Python`:
+
 ```python
 from yaw import *
 
@@ -59,7 +80,7 @@ print((X * Z * X).normalize())  # -Z
 
 ## Example: Quantum Teleportation
 
-Here's quantum teleportation in yaw, demonstrating algebraic operators, state functionals, and branching measurement:
+Here's quantum teleportation in `yaw`, demonstrating algebraic operators, state functionals, and branching measurement:
 
 ```python
 # Define Pauli algebra (qubits)
