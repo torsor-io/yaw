@@ -94,7 +94,7 @@ psi00 = char(Z, 0) @ char(Z, 0)        # |00⟩
 bell_start = (H @ I) << psi00          # |+0⟩
 bell_pair = CNOT << bell_start         # Bell pair
 psi_unknown = H << char(Z, 0)          # State Alice will teleport
-total = psi_unknown @ bell_pair        # Total state
+total_state = psi_unknown @ bell_pair        # Total state
 
 proj00 = proj(Z, 0) @ proj(Z, 0)       # Projector onto |00⟩
 
@@ -104,29 +104,15 @@ def bell_proj(i, j):
 	return CNOT >> (H @ I) >> proj
 bell_projs = [[bell_proj(i, j) for i in [0,1]] for j in [0,1]]
 
-# Measurement results and probabilities
-branches = stBranches(bell_projs, total)
-
-print("Alice's measurement outcomes:")
-for bob_state, probability in branches():
-    if probability > 0.01:  # Only show non-zero outcomes
-        print(f"  Probability: {probability:.3f}")
-        print(f"  Bob's state: {bob_state}")
-        
-        # Bob applies correction based on Alice's classical bits
-        # Outcome 00: I, 01: X, 10: Z, 11: ZX
-        # After correction, Bob has |ψ⟩ = α|0⟩ + β|1⟩
-
-# Verify: measure X on Bob's qubit (should get +1 for |+⟩ state)
-# After appropriate correction, Bob recovers Alice's original state
+# To complete!
 ```
 
-**What makes this different:**
+There are a few key differences from the normal circuit picture:
 
-- **No circuit diagrams**: Operations are algebraic transformations
-- **States as functionals**: Not vectors, but functions on observables (GNS construction)
-- **Branching measurement**: See all outcomes explicitly, not just one sample
-- **Hardware-agnostic**: Same code for any quantum system with this algebra
+- **Functional**: We defined everything from scratch!
+- **No circuit diagrams**: Operations are algebraic transformations.
+- **States as functionals**: Not vectors, but functions on observables (GNS construction).
+- **Branching measurement**: See all outcomes explicitly, not just one sample.
 
 ## Core Concepts
 
