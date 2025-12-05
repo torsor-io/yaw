@@ -68,7 +68,7 @@ python protocol.py
 
 **3. Import as Library**
 Finally, if you prefer, you can work with `yaw` as a package in
-`Python`:
+`Python`. The syntax is a little clunkier, but essentially the same:
 
 ```python
 from yaw import *
