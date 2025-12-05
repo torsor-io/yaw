@@ -183,7 +183,7 @@ We welcome contributors! Areas where you can help:
 
 **Current: v0.1.0 (Initial Public Release)**
 
-yaw is research software transitioning to production. What works:
+`yaw` is a research prototype transitioning to production. What works:
 - ✅ Core operator algebra with normalization
 - ✅ State functionals with GNS foundations
 - ✅ Full-featured REPL with special syntax
