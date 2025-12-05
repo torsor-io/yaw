@@ -84,26 +84,28 @@ Here's quantum teleportation in `yaw`, demonstrating how we can build
 everything we want from scratch:
 
 ```python
-$alg = <X, Z | herm, unit, anti>       # defines algebra of qubits
+$alg = <X, Z | herm, unit, anti>       # Defines algebra of qubits
 
-H = (X + Z) / sqrt(2)                  # defines Hadamard gate
-CNOT = ctrl(Z, [I, X])                 # defines CNOT
+H = (X + Z) / sqrt(2)                  # Defines Hadamard gate
+CNOT = ctrl(Z, [I, X])                 # Defines CNOT
 
-psi00 = char(Z, 0) @ char(Z, 0)        # defines |00⟩
+psi00 = char(Z, 0) @ char(Z, 0)        # |00⟩
 
-bell_start = (H @ I) << psi00          # defines |+0⟩
-bell_pair = CNOT << bell_start         # defines Bell pair
-psi_unknown = H << char(Z, 0)          # state Alice will teleport
-total = psi_unknown @ bell_pair        # total state
+bell_start = (H @ I) << psi00          # |+0⟩
+bell_pair = CNOT << bell_start         # Bell pair
+psi_unknown = H << char(Z, 0)          # State Alice will teleport
+total = psi_unknown @ bell_pair        # Total state
 
-[[bell_{i}{j} = ((H @ I) << (char(Z, i) @ char(Z, j))) for i in range(2)] for j in range(2)]
+proj00 = proj(Z, 0) @ proj(Z, 0)       # Projector onto |00⟩
 
-# Projectors onto Bell basis (first two qubits)
-[P_{k} = proj(Z, k) for k in range(4)]  # Simplified for demo
+# define Bell measurement projectors
+def bell_proj(i, j):
+	proj = (X**i @ X**j) >> proj00
+	return CNOT >> (H @ I) >> proj
 
 # === Measurement with branching (all outcomes) ===
 # This shows all possible measurement results and their probabilities
-branches = stBranches([P_0, P_1, P_2, P_3], total)
+branches = stBranches([bell_proj(i, j) for [i, j] in [[]]], total)
 
 print("Alice's measurement outcomes:")
 for bob_state, probability in branches():
