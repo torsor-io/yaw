@@ -1,2 +1,373 @@
-# yaw
-Algebraic quantum programming language.
+# yaw: Quantum Programming as Algebra
+
+`yaw` (standing for **yaw algebraic way**) is a quantum programming
+language where programs are elements of operator algebras, not circuit
+diagrams.
+Using the power of math, `yaw` enables high-level, hardware
+agnostic, and fault tolerance-friendly code.
+
+> *Syntax : semantics = algebra : Hilbert space.*
+
+In digital circuits, the syntax (proofs) is governed by the Boolean algebra and
+the semantics (meaning) by truth tables. Similarly, our core insight
+is that for quantum circuits, the syntax should be governed by
+C*-algebra and the semantics by Hilbert space.
+
+`yaw` directly works with the algebra, but also allows users to
+"compile" to the usual Hilbert space vectors and matrices using
+something called the *Gelfand-Naimark-Segal* representation.
+So we don't abandon Hilbert space, just give it some help!
+
+## Quick Start
+
+### Installation
+
+```bash
+git clone https://github.com/torsor-io/yaw.git
+cd yaw
+pip install -r requirements.txt  # Just sympy for now
+```
+
+### Three Ways to Use yaw
+
+**1. Interactive REPL**
+```bash
+python -m yaw.yaw_repl
+```
+
+```python
+yaw> $alg = <X, Z | herm, unit, anti>
+yaw> H = (X + Z) / sqrt(2)
+yaw> H >> Z
+X
+```
+
+**2. Compile to Python**
+```bash
+python -m yaw.yawc protocol.yaw -o protocol.py
+python protocol.py
+```
+
+**3. Import as Library**
+```python
+from yaw import *
+
+pauli = Algebra(gens=['X', 'Z'], rels=['herm', 'unit', 'anti'])
+X, Z = pauli.X, pauli.Z
+print((X * Z * X).normalize())  # -Z
+```
+
+## Example: Quantum Teleportation
+
+Here's quantum teleportation in yaw, demonstrating algebraic operators, state functionals, and branching measurement:
+
+```python
+# Define Pauli algebra (qubits)
+$alg = <X, Z | herm, unit, anti>
+
+# Gates
+H = (X + Z) / sqrt(2)
+CNOT = ctrl(Z, [I, X])
+
+# === Alice and Bob share entangled pair ===
+# Start with |00⟩
+psi00 = char(Z, 0) @ char(Z, 0)
+
+# Create Bell state: (H⊗I)|00⟩ then CNOT
+bell_start = (H @ I) << psi00
+bell_pair = CNOT << bell_start
+
+# === Alice has unknown state |ψ⟩ = α|0⟩ + β|1⟩ ===
+# For demonstration, use |+⟩ state
+psi_unknown = H << char(Z, 0)
+
+# === Combine Alice's qubit with shared pair ===
+# Total state: |ψ⟩_A ⊗ |Φ+⟩_{AB}
+total = psi_unknown @ bell_pair
+
+# === Alice measures her two qubits in Bell basis ===
+# Create Bell basis projectors
+bell_00 = ((H @ I) << (char(Z, 0) @ char(Z, 0)))
+bell_01 = ((H @ I) << (char(Z, 0) @ char(Z, 1)))
+bell_10 = ((H @ I) << (char(Z, 1) @ char(Z, 0)))
+bell_11 = ((H @ I) << (char(Z, 1) @ char(Z, 1)))
+
+# Projectors onto Bell basis (first two qubits)
+[P_{k} = proj(Z, k) for k in range(4)]  # Simplified for demo
+
+# === Measurement with branching (all outcomes) ===
+# This shows all possible measurement results and their probabilities
+branches = stBranches([P_0, P_1, P_2, P_3], total)
+
+print("Alice's measurement outcomes:")
+for bob_state, probability in branches():
+    if probability > 0.01:  # Only show non-zero outcomes
+        print(f"  Probability: {probability:.3f}")
+        print(f"  Bob's state: {bob_state}")
+        
+        # Bob applies correction based on Alice's classical bits
+        # Outcome 00: I, 01: X, 10: Z, 11: ZX
+        # After correction, Bob has |ψ⟩ = α|0⟩ + β|1⟩
+
+# Verify: measure X on Bob's qubit (should get +1 for |+⟩ state)
+# After appropriate correction, Bob recovers Alice's original state
+```
+
+**What makes this different:**
+
+- **No circuit diagrams**: Operations are algebraic transformations
+- **States as functionals**: Not vectors, but functions on observables (GNS construction)
+- **Branching measurement**: See all outcomes explicitly, not just one sample
+- **Hardware-agnostic**: Same code for any quantum system with this algebra
+
+## Core Concepts
+
+### Algebras Define Systems
+
+```python
+# Qubit (Pauli algebra)
+$alg = <X, Z | herm, unit, anti>
+
+# Qutrit (dimension 3)
+$alg = <X, Z | herm, unit, pow(3), braid(exp(2*pi*I/3))>
+
+# Relations encode physics: hermiticity, unitarity, dimension, braiding
+```
+
+### States are Functionals
+
+```python
+psi0 = char(Z, 0)      # |0⟩ eigenstate
+psi0.expect(Z)         # ⟨Z⟩ = 1.0
+psi0.expect(X)         # ⟨X⟩ = 0.0
+
+# States eat operators, return expectation values
+Z | psi0               # Alternate syntax: 1.0
+```
+
+### Three Fundamental Operations
+
+```python
+A @ B         # Tensor product: A ⊗ B
+U >> A        # Conjugation: U† A U (transform operator)
+U << psi      # State evolution: U|ψ⟩
+A | psi       # Expectation: ⟨ψ|A|ψ⟩
+```
+
+### Measurement: Four Interfaces
+
+```python
+# 1. Expectation values (most common)
+Z | psi
+
+# 2. Single-shot state measurement (samples one outcome)
+measure = stMeasure([proj(Z, 0), proj(Z, 1)], psi)
+collapsed_state, probability = measure()
+
+# 3. Single-shot operator measurement (Heisenberg picture)
+measure = opMeasure([K0, K1], psi)
+transformed_op, probability = measure(X)
+
+# 4. All branches (shows full ensemble - no sampling)
+branches = stBranches([proj(Z, 0), proj(Z, 1)], psi)
+for state, prob in branches():
+    print(f"Probability: {prob}")
+```
+
+### Special Syntax
+
+```python
+[[X, Z]]                               # Commutator
+{{X, Z}}                               # Anticommutator
+[P_{k} = proj(Z, k) for k in range(3)] # Create P_0, P_1, P_2
+expr ! pow(3), herm                    # Local context (temporary relations)
+```
+
+## Language Components
+
+yaw consists of three integrated tools:
+
+**yaw/yaw_prototype.py** - Core library (~3700 lines)
+- Operator algebra with symbolic manipulation
+- States as functionals (GNS construction)
+- Quantum channels (Heisenberg and Schrödinger pictures)
+- Measurement primitives with Born rule statistics
+- Quantum error correction (encodings as functors)
+- Context management for complex programs
+
+**yaw/yaw_repl.py** - Interactive development
+- Algebra definition: `$alg = <gens | rels>`
+- Subscripted variables: `P_{k}`
+- List comprehensions with assignment
+- Commutator/anticommutator syntax
+- Multi-line statements (for, if, def)
+
+**yaw/yawc.py** - Compiler
+- Transforms `.yaw` files to Python
+- Preserves algebraic semantics
+- Generates readable, documented code
+- Handles special syntax (commutators, subscripts, comprehensions)
+
+## Contributing
+
+We welcome contributions! Areas where you can help:
+
+**Current: v0.1.0 (Initial Public Release)**
+
+yaw is research software transitioning to production. What works:
+- ✅ Core operator algebra with normalization
+- ✅ State functionals with GNS foundations
+- ✅ Full-featured REPL with special syntax
+- ✅ Compiler (yaw → Python)
+- ✅ Quantum channels and measurement
+- ✅ Basic quantum error correction
+- ✅ Multi-qudit tensor products
+- ✅ Controlled operations and QFT
+
+**Known limitations:**
+- Oscillator (bosonic) support incomplete
+- Limited compiler optimizations
+- Some edge cases in state transformations
+- Performance not yet optimized (correctness first)
+
+**Roadmap:**
+
+*v0.2.0 (Q1 2025)*
+- Oscillator algebra and bosonic codes
+- Advanced QEC (surface, color codes)
+- Compiler optimization passes
+- Comprehensive test suite
+
+*v0.3.0 (Q2-Q3 2025)*
+- λix backend (hardware-agnostic compilation)
+- Stabilizer code automation
+- Type system for quantum programs
+- Module/import system
+
+*v1.0.0 (2026)*
+- Production-ready with λix integration
+- Hardware backend connectors
+- Formal verification tools
+- Industry partnerships
+
+## Status & Roadmap
+
+**Current: v0.1.0 (Initial Public Release)**
+
+yaw is research software transitioning to production. What works:
+- ✅ Core operator algebra with normalization
+- ✅ State functionals with GNS foundations
+- ✅ Full-featured REPL with special syntax
+- ✅ Compiler (yaw → Python)
+- ✅ Quantum channels and measurement
+- ✅ Basic quantum error correction
+- ✅ Multi-qudit tensor products
+- ✅ Controlled operations and QFT
+
+**Known limitations:**
+- Oscillator (bosonic) support incomplete
+- Limited compiler optimizations
+- Some edge cases in state transformations
+- Performance not yet optimized (correctness first)
+
+**Roadmap:**
+
+*v0.2.0 (Q1 2025)*
+- Oscillator algebra and bosonic codes
+- Advanced QEC (surface, color codes)
+- Compiler optimization passes
+- Comprehensive test suite
+
+*v0.3.0 (Q2-Q3 2025)*
+- λix backend (hardware-agnostic compilation)
+- Stabilizer code automation
+- Type system for quantum programs
+- Module/import system
+
+*v1.0.0 (2026)*
+- Production-ready with λix integration
+- Hardware backend connectors
+- Formal verification tools
+- Industry partnerships
+
+## Contributing
+
+We welcome contributions! Areas where you can help:
+
+- **Core library**: New operators, states, channels, QEC codes
+- **REPL**: Better error messages, tab completion, history
+- **Compiler**: Optimization passes, type checking, new syntax
+- **Examples**: Quantum algorithms, protocols, tutorials
+- **Documentation**: Guides, API docs, pedagogical content
+- **Testing**: Unit tests, integration tests, benchmarks
+
+**Quick start for contributors:**
+1. Fork the repository
+2. Make your changes with clear commit messages
+3. Submit a pull request
+4. We'll review and provide feedback
+
+Questions or ideas? Open a [Discussion](https://github.com/torsorlabs/yaw/discussions) or [Issue](https://github.com/torsorlabs/yaw/issues).
+
+## Philosophy
+
+yaw embodies several principles:
+
+- **Algebra first**: The mathematical structure *is* the program
+- **Hardware agnostic**: Write for the abstraction, compile to any backend
+- **Fault-tolerant native**: Designed for logical qubits, not NISQ workarounds
+- **Composability**: Small pieces combine naturally
+- **Joy-coded**: If it's not beautiful, it's not done
+
+Traditional quantum computing: `Algorithm → Gates → Circuits → Hardware`
+
+yaw: `Algorithm → Algebra → λix → Any Hardware`
+
+The algebra layer is universal.
+
+## Citation
+
+If you use yaw in research, please cite:
+
+```bibtex
+@software{yaw2025,
+  author = {Wakeham, David},
+  title = {yaw: Quantum Programming as Algebra},
+  year = {2025},
+  publisher = {Torsor Labs},
+  url = {https://github.com/torsorlabs/yaw},
+  version = {0.1.0}
+}
+```
+
+## Theoretical Foundation
+
+yaw builds on rigorous mathematical physics:
+
+**GNS Construction**: States are positive linear functionals ω: A → ℂ on operator algebras. The Gelfand-Naimark-Segal construction recovers Hilbert space representations, reversing the usual formulation—states are primary, Hilbert space emerges.
+
+**C*-Algebras**: Operator algebras with addition, multiplication, adjoint, and norm. yaw operators satisfy algebraic relations (hermiticity, unitarity, braiding) without explicit matrix representations.
+
+**Hardware Agnosticism**: By working at the algebraic level, yaw programs are independent of physical implementation—the same code compiles to superconducting qubits, trapped ions, photonics, or logical qubits.
+
+## License
+
+MIT License - see [LICENSE](LICENSE)
+
+## Acknowledgments
+
+yaw builds on foundations from C*-algebra theory (Gelfand, Naimark, Segal), categorical quantum mechanics (Abramsky, Coecke), algebraic QFT (Haag, Kastler), and modern quantum error correction (Gottesman, Kitaev, Preskill).
+
+## Contact
+
+**David Wakeham**  
+Torsor Labs  
+[Email](mailto:david@torsorlabs.com) | [Website](https://torsorlabs.com)
+
+**Issues & Discussions**: [GitHub](https://github.com/torsorlabs/yaw)
+
+---
+
+*Made with love, coffee, and Claude.*
+
+*"Boolean algebra for qubits."*

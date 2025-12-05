@@ -1,0 +1,4424 @@
+"""
+yaw: Quantum context management language
+Production prototype using SymPy backend
+
+This module provides a functional approach to quantum computing based on:
+- Algebraic operator manipulation
+- Expectation functionals for quantum states
+- Symbolic normalization with context management
+- Tensor product algebra for multi-qubit systems
+"""
+
+from sympy.physics.quantum import Operator, Dagger
+from sympy import sqrt, expand, Mul, Add, Pow
+from sympy.core.numbers import Number as SympyNumber
+from typing import List, Tuple
+
+import re
+import random
+import numpy as np
+
+__version__ = "0.1.0"
+__all__ = [
+    'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit',
+    'State', 'EigenState', 'TensorState', 'ConjugatedState', 
+    'TransformedState', 'CollapsedState', 'TensorSum',
+    'OpChannel', 'opChannel', 'StChannel', 'stChannel',
+    'OpMeasurement', 'opMeasure', 'StMeasurement', 'stMeasure',
+    'OpBranches', 'opBranches', 'StBranches', 'stBranches',
+    'compose_st_branches', 'compose_op_branches',
+    'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
+    'QFT', 'qft', 'proj', 'ctrl', 'ctrl_single',
+    'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
+    'comm', 'acomm',
+    'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
+    'gnsVec', 'gnsMat'
+]
+
+# ============================================================================
+# CONTEXT MANAGEMENT
+# ============================================================================
+
+class Context:
+    """Context management with variable linking and inheritance.
+    
+    Manages three namespaces:
+    - temp: Temporary variables (_gens, _rels)
+    - global_: Global variables ($gens, $rels, $alg, $state)
+    - user: User-defined variables (H, psi0, etc.)
+    
+    Supports context graph (GCG) for inheritance:
+    - link(parent, child): parent inherits from child
+    - unlink(parent, child): stop inheritance
+    
+    Default behavior: $gens and $rels inherit from _gens and _rels
+    """
+    
+    def __init__(self):
+        """Initialize context with empty namespaces and default links."""
+        self.temp = {}
+        self.global_ = {}
+        self.user = {}
+        
+        # Context graph: parent -> set of children
+        self.links = {
+            '$gens': {'_gens'},  # Default: $gens inherits from _gens
+            '$rels': {'_rels'}
+        }
+        
+        # Initialize empty generator/relation sets
+        self.temp['_gens'] = set()
+        self.temp['_rels'] = set()
+        self.global_['$gens'] = set()
+        self.global_['$rels'] = set()
+    
+    def link(self, parent, child):
+        """Establish inheritance: parent inherits from child.
+        
+        Args:
+            parent: Variable name (e.g., '$gens')
+            child: Variable name to inherit from (e.g., '_gens')
+        """
+        if parent not in self.links:
+            self.links[parent] = set()
+        self.links[parent].add(child)
+        return f"Linked: {parent} <- {child}"
+    
+    def unlink(self, parent, child):
+        """Remove inheritance relationship.
+        
+        Args:
+            parent: Variable name
+            child: Variable name to stop inheriting from
+        """
+        if parent in self.links:
+            self.links[parent].discard(child)
+        return f"Unlinked: {parent} -/- {child}"
+    
+    def get(self, name):
+        """Get variable value with inheritance.
+        
+        Resolution order:
+        1. Direct lookup in appropriate namespace
+        2. If not found and variable has links, check children
+        
+        Args:
+            name: Variable name
+            
+        Returns:
+            Variable value or None
+        """
+        # Temporary variables (_vars)
+        if name.startswith('_'):
+            if name in self.temp:
+                return self.temp[name]
+            return None
+        
+        # Global variables ($vars)
+        elif name.startswith('$'):
+            # Direct lookup
+            if name in self.global_:
+                result = self.global_[name]
+                
+                # If it's a set (like $gens), merge with children via links
+                if isinstance(result, set) and name in self.links:
+                    merged = set(result)
+                    for child in self.links[name]:
+                        child_val = self.get(child)
+                        if child_val and isinstance(child_val, set):
+                            merged |= child_val
+                    return merged
+                
+                return result
+            
+            # Not found, check inheritance
+            if name in self.links:
+                for child in self.links[name]:
+                    child_val = self.get(child)
+                    if child_val is not None:
+                        return child_val
+            
+            return None
+        
+        # User variables
+        else:
+            return self.user.get(name)
+    
+    def set(self, name, value):
+        """Set variable value.
+        
+        Args:
+            name: Variable name
+            value: Value to store
+        """
+        if name.startswith('_'):
+            self.temp[name] = value
+        elif name.startswith('$'):
+            self.global_[name] = value
+        else:
+            self.user[name] = value
+    
+    def has(self, name):
+        """Check if variable exists."""
+        return self.get(name) is not None
+    
+    def list_vars(self):
+        """List all variables."""
+        return (list(self.temp.keys()) + 
+                list(self.global_.keys()) + 
+                list(self.user.keys()))
+    
+    def add_to_temp_gens(self, gen_name):
+        """Add generator to _gens (auto-accumulation).
+        
+        Args:
+            gen_name: Generator name to add
+        """
+        if '_gens' not in self.temp:
+            self.temp['_gens'] = set()
+        self.temp['_gens'].add(gen_name)
+
+# ============================================================================
+# QUANTUM ERROR CORRECTION - ENCODINGS
+# ============================================================================
+
+class Encoding:
+    """Functor from logical algebra to physical algebra.
+    
+    An encoding implements a quantum error correction code as an algebra
+    homomorphism. It maps logical operators to physical operators while
+    preserving algebraic structure:
+    
+        encode(A + B) = encode(A) + encode(B)
+        encode(A * B) = encode(A) * encode(B)
+        encode(c * A) = c * encode(A)
+    
+    This functional approach makes QEC codes first-class algebraic objects.
+    
+    Example:
+        >>> # 3-qubit repetition code
+        >>> code = rep(3)
+        >>> X_L | code  # Returns X Ã¢Å â€” X Ã¢Å â€” X
+        >>> (X + Z) | code  # Returns (XÃ¢Å â€”XÃ¢Å â€”X) + (ZÃ¢Å â€”ZÃ¢Å â€”Z)
+    """
+    
+    def __init__(self, logical_algebra, physical_algebra, generator_map):
+        """Create encoding functor.
+        
+        Args:
+            logical_algebra: Source algebra (logical qubits/qudits)
+            physical_algebra: Target algebra (physical qubits/qudits)
+            generator_map: Dict mapping logical generator names to physical operators
+                          e.g., {'X': XÃ¢Å â€”XÃ¢Å â€”X, 'Z': ZÃ¢Å â€”ZÃ¢Å â€”Z, 'I': IÃ¢Å â€”IÃ¢Å â€”I}
+        """
+        self.logical_algebra = logical_algebra
+        self.physical_algebra = physical_algebra
+        self.generator_map = generator_map
+    
+    def __call__(self, logical_op):
+        """Apply encoding: logical_op | encoding"""
+
+        if isinstance(logical_op, YawOperator):
+            result = self._encode_operator(logical_op)
+            return result
+        elif isinstance(logical_op, Projector):
+            # Encode projector by encoding its base operator
+            base_encoded = self._encode_operator(logical_op.base_operator)
+            # Return projector in physical space
+            logical_proj = logical_op.expand()
+            return self._encode_operator(logical_proj)
+        else:
+            raise TypeError(f"Cannot encode {type(logical_op)}")
+
+    def _encode_operator(self, op):
+        """Encode operator by traversing expression tree homomorphically."""
+        from sympy import Add, Mul, Pow, Symbol
+
+        expr = op._expr
+
+        # Recursively encode the expression
+        result = self._encode_expr(expr)
+        return result
+
+    def _encode_expr(self, expr):
+        """Recursively encode a SymPy expression."""
+        from sympy import Add, Mul, Pow, Symbol
+        from sympy.physics.quantum.operator import Operator
+
+        # Base case: Generator (Symbol or Quantum Operator)
+        if isinstance(expr, Symbol) or isinstance(expr, Operator):
+            gen_name = str(expr)
+
+            if gen_name in self.generator_map:
+                return self.generator_map[gen_name]
+            else:
+                # Unknown generator - return wrapped
+                return YawOperator(expr, self.physical_algebra)
+
+        # Base case: Numbers (scalars)
+        if expr.is_number:
+            return expr
+
+        # Recursive case: Sum
+        # encode(A + B) = encode(A) + encode(B)
+        if isinstance(expr, Add):
+            encoded_terms = [self._encode_expr(term) for term in expr.args]
+
+            # Sum the encoded terms
+            result = encoded_terms[0]
+            for term in encoded_terms[1:]:
+                result = result + term
+
+            return result
+
+        # Recursive case: Product
+        # encode(A * B) = encode(A) * encode(B)
+        if isinstance(expr, Mul):
+            # Separate coefficients from operators
+            coeff = 1
+            operator_factors = []
+
+            for arg in expr.args:
+                if arg.is_number:
+                    coeff *= arg
+                else:
+                    operator_factors.append(self._encode_expr(arg))
+
+            # If no operators, just return coefficient
+            if not operator_factors:
+                return coeff
+
+            # Multiply encoded factors together
+            result = operator_factors[0]
+            for factor in operator_factors[1:]:
+                result = result * factor
+
+            # Apply coefficient
+            if coeff != 1:
+                result = coeff * result
+
+            return result
+
+        # Recursive case: Power
+        # encode(A^n) = encode(A)^n
+        if isinstance(expr, Pow):
+            base_encoded = self._encode_expr(expr.base)
+            exponent = expr.exp
+
+            # Handle integer powers
+            if exponent.is_integer:
+                exp_int = int(exponent)
+                if exp_int == 0:
+                    # A^0 = I
+                    if 'I' in self.generator_map:
+                        return self.generator_map['I']
+                    else:
+                        return 1
+                elif exp_int > 0:
+                    result = base_encoded
+                    for _ in range(exp_int - 1):
+                        result = result * base_encoded
+                    return result
+                else:
+                    raise ValueError(f"Negative powers not supported in encoding: {expr}")
+            else:
+                raise ValueError(f"Non-integer powers not supported in encoding: {expr}")
+
+        # Default: wrap in YawOperator
+        return YawOperator(expr, self.physical_algebra)
+
+    def __ror__(self, operator):
+        """Enable operator | encoding syntax.
+        
+        Args:
+            operator: YawOperator in logical algebra
+            
+        Returns:
+            Encoded operator in physical algebra
+            
+        Example:
+            >>> X | code  # Calls code.__ror__(X)
+        """
+        return self(operator)
+    
+    def __str__(self):
+        gen_names = list(self.generator_map.keys())
+        return f"Encoding([{', '.join(gen_names)}]: logical Ã¢â€ â€™ physical)"
+    
+    def __repr__(self):
+        return f"Encoding({self.logical_algebra} Ã¢â€ â€™ {self.physical_algebra})"
+
+def rep(n, algebra=None):
+    """n-fold repetition code encoding.
+    
+    Maps each logical operator to n tensor copies of itself:
+        X_L Ã¢â€ â€™ X Ã¢Å â€” X Ã¢Å â€” ... Ã¢Å â€” X  (n times)
+        Z_L Ã¢â€ â€™ Z Ã¢Å â€” Z Ã¢Å â€” ... Ã¢Å â€” Z  (n times)
+        I_L Ã¢â€ â€™ I Ã¢Å â€” I Ã¢Å â€” ... Ã¢Å â€” I  (n times)
+    
+    This is the simplest quantum error correction code, protecting against
+    single bit flips (for odd n).
+    
+    Args:
+        n: Number of repetitions (physical qubits per logical qubit)
+        algebra: Logical algebra (if None, inferred from context when applied)
+        
+    Returns:
+        Encoding functor from logical to physical algebra
+        
+    Example:
+        >>> $alg = qudit(2)
+        >>> code = rep(3)
+        >>> X | code  # X Ã¢Å â€” X Ã¢Å â€” X
+        >>> (X + Z) | code  # (XÃ¢Å â€”XÃ¢Å â€”X) + (ZÃ¢Å â€”ZÃ¢Å â€”Z)
+        
+        >>> # Stabilizers for 3-qubit repetition code (bit flip)
+        >>> S1 = Z @ Z @ I
+        >>> S2 = I @ Z @ Z
+    """
+    if n < 1:
+        raise ValueError(f"Number of repetitions must be at least 1, got {n}")
+    
+    # If algebra not provided, return a partial encoding that will infer it
+    if algebra is None:
+        return _PartialRepEncoding(n)
+    
+    # Build generator map: each generator Ã¢â€ â€™ n-fold tensor product
+    generator_map = {}
+    
+    for gen_name, gen_op in algebra.generators.items():
+        # Create n-fold tensor product
+        if n == 1:
+            encoded = gen_op
+        else:
+            # Start with first copy
+            encoded = gen_op
+            # Tensor with n-1 more copies
+            for _ in range(n - 1):
+                encoded = encoded @ gen_op
+        
+        generator_map[gen_name] = encoded
+    
+    # Also map identity
+    I_op = algebra.I
+    if n == 1:
+        encoded_I = I_op
+    else:
+        encoded_I = I_op
+        for _ in range(n - 1):
+            encoded_I = encoded_I @ I_op
+    
+    generator_map['I'] = encoded_I
+    
+    # Physical algebra is n copies of logical algebra
+    # For now, leave as None (could construct tensor product algebra)
+    physical_algebra = None
+    
+    return Encoding(algebra, physical_algebra, generator_map)
+
+
+class _PartialRepEncoding:
+    """Partial repetition encoding that infers algebra from operator.
+    
+    This allows rep(n) to be used without explicitly passing an algebra:
+        X | rep(3)
+    
+    The algebra is inferred from X when the encoding is applied.
+    """
+    
+    def __init__(self, n):
+        self.n = n
+    
+    def __ror__(self, operator):
+        """Enable operator | rep(n) syntax."""
+        if isinstance(operator, YawOperator):
+            # Infer algebra from operator
+            if operator.algebra is None:
+                raise ValueError(
+                    f"Cannot infer algebra from operator {operator}. "
+                    f"Please provide algebra explicitly: rep({self.n}, algebra)"
+                )
+            
+            # Create full encoding with inferred algebra
+            full_encoding = rep(self.n, operator.algebra)
+            
+            # Apply it
+            return full_encoding(operator)
+        else:
+            raise TypeError(f"Cannot encode {type(operator)} with rep({self.n})")
+    
+    def __call__(self, operator):
+        """Also support code(operator) syntax."""
+        return self.__ror__(operator)
+
+
+# ============================================================================
+# STABILIZER CODES
+# ============================================================================
+
+class StabilizerCode:
+    """Stabilizer quantum error correction code.
+    
+    A stabilizer code is defined by:
+    - Stabilizer generators: Commuting operators that stabilize the code space
+    - Logical operators: Operators that commute with stabilizers but aren't in the stabilizer group
+    - Encoding: Maps logical operators to physical operators
+    
+    Attributes:
+        stabilizers: List of stabilizer generators
+        logical_ops: Dict mapping logical operator names to physical operators
+        encoding: Encoding functor for logical â†’ physical
+        error_table: Dict mapping syndromes to recovery operations
+    """
+    
+    def __init__(self, stabilizers, logical_ops, encoding, error_table=None, name="Stabilizer Code"):
+        """Create stabilizer code.
+        
+        Args:
+            stabilizers: List of stabilizer generator operators
+            logical_ops: Dict like {'X_L': physical_X, 'Z_L': physical_Z}
+            encoding: Encoding functor
+            error_table: Optional dict mapping syndrome tuples to recovery operators
+            name: Human-readable name for the code
+        """
+        self.stabilizers = stabilizers
+        self.logical_ops = logical_ops
+        self.encoding = encoding
+        self.error_table = error_table or {}
+        self.name = name
+    
+    def measure_syndrome(self, state):
+        """Measure stabilizer syndrome on a state.
+        
+        Args:
+            state: Quantum state (physical qubits)
+            
+        Returns:
+            Tuple of stabilizer measurement outcomes (each Â±1)
+        """
+        syndrome = []
+        for stab in self.stabilizers:
+            # Measure expectation value of stabilizer
+            outcome = state.expect(stab)
+            # Convert to Â±1 (assuming eigenvalues are Â±1)
+            syndrome.append(outcome)
+        return tuple(syndrome)
+    
+    def lookup_correction(self, syndrome):
+        """Look up error correction operation for a syndrome.
+        
+        Args:
+            syndrome: Tuple of stabilizer outcomes
+            
+        Returns:
+            Correction operator, or None if syndrome not in table
+        """
+        return self.error_table.get(syndrome)
+    
+    def correct_error(self, state, syndrome=None):
+        """Correct errors on a state.
+        
+        Args:
+            state: Physical state (possibly with errors)
+            syndrome: Optional syndrome (if None, measure it)
+            
+        Returns:
+            Corrected state
+        """
+        if syndrome is None:
+            syndrome = self.measure_syndrome(state)
+        
+        correction = self.lookup_correction(syndrome)
+        if correction is None:
+            raise ValueError(f"No correction found for syndrome {syndrome}")
+        
+        # Apply correction: U |ÏˆâŸ©
+        return correction.conj_state(state)
+    
+    def __str__(self):
+        return f"{self.name} ({len(self.stabilizers)} stabilizers)"
+    
+    def __repr__(self):
+        return f"StabilizerCode(name='{self.name}', n_stab={len(self.stabilizers)})"
+
+
+def five_qubit_code(algebra=None):
+    """Five-qubit stabilizer code (smallest perfect code).
+    
+    The [[5,1,3]] code is the smallest quantum code that can correct
+    an arbitrary single-qubit error. It encodes 1 logical qubit into
+    5 physical qubits and has distance 3.
+    
+    Stabilizers (4 generators):
+        S1 = X Z Z X I
+        S2 = I X Z Z X
+        S3 = X I X Z Z
+        S4 = Z X I X Z
+    
+    Logical operators:
+        X_L = X X X X X
+        Z_L = Z Z Z Z Z
+    
+    Args:
+        algebra: Logical qubit algebra (if None, created automatically)
+        
+    Returns:
+        StabilizerCode instance with encoding, stabilizers, and error table
+        
+    Example:
+        >>> code = five_qubit_code()
+        >>> X_L = code.logical_ops['X']
+        >>> Z_L = code.logical_ops['Z']
+        >>> 
+        >>> # Check stabilizers commute with logical ops
+        >>> S1 = code.stabilizers[0]
+        >>> comm(S1, X_L).normalize()  # Should be 0
+        >>> 
+        >>> # Syndrome measurement
+        >>> psi = char(Z_L, 0)  # Logical |0âŸ©
+        >>> syndrome = code.measure_syndrome(psi)  # All +1 for code space
+        >>> 
+        >>> # Error correction
+        >>> noisy_psi = (X @ I @ I @ I @ I).conj_state(psi)  # Apply X error
+        >>> syndrome = code.measure_syndrome(noisy_psi)
+        >>> corrected = code.correct_error(noisy_psi, syndrome)
+    """
+    # Create logical algebra if not provided
+    if algebra is None:
+        algebra = Algebra(
+            gens=['X', 'Z'],
+            rels=['herm', 'unit', 'anti', 'pow(2)']
+        )
+    
+    X = algebra.X
+    Z = algebra.Z
+    I = algebra.I
+    
+    # Define stabilizer generators on 5 physical qubits
+    # S1 = X Z Z X I
+    S1 = X @ Z @ Z @ X @ I
+    # S2 = I X Z Z X
+    S2 = I @ X @ Z @ Z @ X
+    # S3 = X I X Z Z
+    S3 = X @ I @ X @ Z @ Z
+    # S4 = Z X I X Z
+    S4 = Z @ X @ I @ X @ Z
+    
+    stabilizers = [S1, S2, S3, S4]
+    
+    # Define logical operators
+    # X_L = X X X X X (all X)
+    X_L = X @ X @ X @ X @ X
+    # Z_L = Z Z Z Z Z (all Z)
+    Z_L = Z @ Z @ Z @ Z @ Z
+    
+    logical_ops = {
+        'X': X_L,
+        'Z': Z_L,
+        'I': I @ I @ I @ I @ I
+    }
+    
+    # Create encoding functor
+    generator_map = {
+        'X': X_L,
+        'Z': Z_L,
+        'I': I @ I @ I @ I @ I
+    }
+    
+    encoding = Encoding(algebra, None, generator_map)
+    
+    # Build error correction table
+    # For single-qubit Pauli errors, map syndrome â†’ correction
+    error_table = {}
+    
+    # Identity (no error) â†’ all stabilizers +1
+    error_table[(1, 1, 1, 1)] = I @ I @ I @ I @ I
+    
+    # Single-qubit X errors
+    # These can be computed by checking which stabilizers anticommute with X_i
+    # For now, we'll leave the error table incomplete as a placeholder
+    # A complete implementation would enumerate all 15 single-qubit Pauli errors
+    
+    # Example: X error on qubit 0 
+    # X_0 anticommutes with S1 and S3 â†’ flips their signs
+    # Syndrome: (-1, 1, -1, 1) means apply X on qubit 0
+    error_table[(-1, 1, -1, 1)] = X @ I @ I @ I @ I
+    
+    # More entries would go here...
+    # In practice, compute this systematically or generate on the fly
+    
+    return StabilizerCode(
+        stabilizers=stabilizers,
+        logical_ops=logical_ops,
+        encoding=encoding,
+        error_table=error_table,
+        name="[[5,1,3]] Five-Qubit Code"
+    )
+
+
+def bit_flip_code(algebra=None):
+    """Three-qubit bit-flip code (repetition code for X errors).
+    
+    The [[3,1,1]] bit-flip code protects against single X (bit-flip) errors
+    by encoding one logical qubit into three physical qubits. This is the
+    quantum version of the classical repetition code.
+    
+    Stabilizers (2 generators):
+        S1 = Z Z I  (checks qubits 0 and 1 have same Z value)
+        S2 = I Z Z  (checks qubits 1 and 2 have same Z value)
+    
+    Logical operators:
+        X_L = X X X  (flip all three bits)
+        Z_L = Z I I  (measure any single Z)
+    
+    Code space: {|000âŸ©, |111âŸ©} encodes {|0âŸ©_L, |1âŸ©_L}
+    
+    Args:
+        algebra: Logical qubit algebra (if None, created automatically)
+        
+    Returns:
+        StabilizerCode instance with complete error correction
+        
+    Example:
+        >>> code = bit_flip_code()
+        >>> X_L = code.logical_ops['X']
+        >>> Z_L = code.logical_ops['Z']
+        >>> 
+        >>> # Encode logical |0âŸ© â†’ |000âŸ©
+        >>> psi_L = char(Z_L, 0)  # Logical |0âŸ© 
+        >>> # (In code space, this is |000âŸ©)
+        >>> 
+        >>> # Apply bit flip error on qubit 1
+        >>> error = I @ X @ I
+        >>> noisy = error.conj_state(psi_L)
+        >>> 
+        >>> # Measure syndrome
+        >>> syndrome = code.measure_syndrome(noisy)
+        >>> # Should be (-1, 1) indicating error on qubit 1
+        >>> 
+        >>> # Correct
+        >>> corrected = code.correct_error(noisy, syndrome)
+    """
+    # Create logical algebra if not provided
+    if algebra is None:
+        algebra = Algebra(
+            gens=['X', 'Z'],
+            rels=['herm', 'unit', 'anti', 'pow(2)']
+        )
+    
+    X = algebra.X
+    Z = algebra.Z
+    I = algebra.I
+    
+    # Define stabilizer generators on 3 physical qubits
+    # S1 = Z Z I  (qubits 0,1 have same phase)
+    S1 = Z @ Z @ I
+    # S2 = I Z Z  (qubits 1,2 have same phase)
+    S2 = I @ Z @ Z
+    
+    stabilizers = [S1, S2]
+    
+    # Define logical operators
+    # X_L = X X X (flip all bits)
+    X_L = X @ X @ X
+    # Z_L = Z I I (measure first qubit's phase)
+    # Could also use Z @ I @ I or I @ Z @ I - all equivalent in code space
+    Z_L = Z @ I @ I
+    
+    logical_ops = {
+        'X': X_L,
+        'Z': Z_L,
+        'I': I @ I @ I
+    }
+    
+    # Create encoding functor
+    generator_map = {
+        'X': X_L,
+        'Z': Z_L,
+        'I': I @ I @ I
+    }
+    
+    encoding = Encoding(algebra, None, generator_map)
+    
+    # Build complete error correction table
+    # Syndromes are (S1, S2) where each is Â±1
+    error_table = {}
+    
+    # No error: both stabilizers measure +1
+    error_table[(1, 1)] = I @ I @ I
+    
+    # X error on qubit 0: flips S1 (which checks 0,1)
+    # Syndrome: S1=-1, S2=+1
+    error_table[(-1, 1)] = X @ I @ I
+    
+    # X error on qubit 1: flips both S1 and S2 (1 is in both checks)
+    # Syndrome: S1=-1, S2=-1
+    error_table[(-1, -1)] = I @ X @ I
+    
+    # X error on qubit 2: flips S2 (which checks 1,2)
+    # Syndrome: S1=+1, S2=-1
+    error_table[(1, -1)] = I @ I @ X
+    
+    return StabilizerCode(
+        stabilizers=stabilizers,
+        logical_ops=logical_ops,
+        encoding=encoding,
+        error_table=error_table,
+        name="[[3,1,1]] Bit-Flip Code"
+    )
+    
+    def __str__(self):
+        return f"rep({self.n})"
+    
+    def __repr__(self):
+        return f"rep({self.n})"
+
+
+
+# ============================================================================
+# OPERATORS
+# ============================================================================
+    
+class YawOperator:
+    """Operator in a non-commutative algebra with context management.
+    
+    Wraps a SymPy expression with yaw semantics, including:
+    - Non-commutative multiplication
+    - Adjoint (Hermitian conjugate)
+    - Context-aware normalization
+    - Conjugation operations
+    
+    Attributes:
+        _expr: Internal SymPy expression
+        algebra: Associated Algebra for normalization rules
+    """
+    
+    def __init__(self, sympy_expr, algebra=None):
+        """Create operator from SymPy expression.
+        
+        Args:
+            sympy_expr: SymPy quantum operator expression
+            algebra: Associated Algebra (optional)
+        """
+        self._expr = sympy_expr
+        self.algebra = algebra
+
+    def __ror__(self, other):
+        """Enable A | context syntax.
+        
+        Handles:
+        - state | A  Ã¢â€ â€™ expectation value (existing)
+        - A | encoding  Ã¢â€ â€™ encoded operator (new)
+        """
+        if isinstance(other, State):
+            # Existing: expectation value
+            return other.expect(self)
+        elif isinstance(other, Encoding):
+            # New: apply encoding
+            return other(self)
+        else:
+            # Try to interpret as encoding if it's callable
+            if callable(other):
+                return other(self)
+            raise TypeError(f"Cannot evaluate operator with {type(other)}")
+
+    def __invert__(self):
+        """Enable ~A syntax as shorthand for A.normalize()
+        
+        Example:
+            >>> ~(X + Z)  # Same as (X + Z).normalize()
+            >>> ~comm(X, Z)  # Same as comm(X, Z).normalize()
+        """
+        return self.normalize()
+        
+    def __mul__(self, other):
+        """Non-commutative multiplication."""
+        if isinstance(other, YawOperator):
+            return YawOperator(self._expr * other._expr, self.algebra)
+        return YawOperator(self._expr * other, self.algebra)
+
+    def __matmul__(self, other):
+        """Tensor product using @ operator: A @ B = A Ã¢Å â€” B
+
+        Distributes over sums on both sides.
+        """
+        from sympy import Add
+
+        # *** FIRST: Check if SELF (left operand) is a sum ***
+        if isinstance(self._expr, Add):
+            # Distribute: (A + B) @ C = A @ C + B @ C
+            terms = []
+            for term_expr in self._expr.args:
+                term_op = YawOperator(term_expr, self.algebra)
+                tensor_product = term_op @ other
+                terms.append(tensor_product)
+            return TensorSum(terms)
+
+        # *** SECOND: Check if OTHER (right operand) is a sum ***
+        if isinstance(other, YawOperator) and isinstance(other._expr, Add):
+            # Distribute: A @ (B + C) = A @ B + A @ C
+            terms = []
+            for term_expr in other._expr.args:
+                term_op = YawOperator(term_expr, other.algebra)
+                tensor_product = self @ term_op
+                terms.append(tensor_product)
+            return TensorSum(terms)
+
+        # *** THIRD: Handle simple cases ***
+        if isinstance(other, YawOperator):
+            # Simple tensor product
+            return TensorProduct([self, other])
+        elif isinstance(other, TensorProduct):
+            # A @ (B Ã¢Å â€” C) = A Ã¢Å â€” B Ã¢Å â€” C
+            return TensorProduct([self] + other.factors)
+        elif isinstance(other, TensorSum):
+            # A @ (B + C + ...) = A @ B + A @ C + ...
+            terms = [self @ term for term in other.terms]
+            return TensorSum(terms)
+        else:
+            raise TypeError(f"Cannot tensor YawOperator with {type(other)}")
+    
+    def __rmatmul__(self, other):
+        """Right tensor product: supports (A + B) @ C
+
+        Distributes: (A + B) @ C = A @ C + B @ C
+        """
+        from sympy import Add
+
+        if isinstance(other, YawOperator):
+            # Check if other is a sum
+            if isinstance(other._expr, Add):
+                # Distribute
+                terms = []
+                for term in other._expr.args:
+                    term_op = YawOperator(term, other.algebra)
+                    tensor_product = TensorProduct([term_op, self])
+                    terms.append(tensor_product)
+
+                # Return TensorSum
+                return TensorSum(terms)
+            else:
+                return TensorProduct([other, self])
+        else:
+            # Fall back
+            return TensorProduct([other, self])
+    
+    def __rmul__(self, other):
+        """Right multiplication (for scalar * operator)."""
+        return YawOperator(other * self._expr, self.algebra)
+    
+    def __add__(self, other):
+        """Addition of operators."""
+        if isinstance(other, YawOperator):
+            return YawOperator(self._expr + other._expr, self.algebra)
+        elif isinstance(other, TensorProduct):
+            return TensorSum([self, other])
+        elif isinstance(other, TensorSum):
+            return TensorSum([self] + other.terms)
+        else:
+            return YawOperator(self._expr + other, self.algebra)
+
+    def __radd__(self, other):
+        return YawOperator(other + self._expr, self.algebra)
+
+    def __sub__(self, other):
+        """Subtraction of operators."""
+        if isinstance(other, YawOperator):
+            return YawOperator(self._expr - other._expr, self.algebra)
+        return YawOperator(self._expr - other, self.algebra)
+    
+    def __rsub__(self, other):
+        """Right subtraction (for scalar - operator)."""
+        return YawOperator(other - self._expr, self.algebra)
+
+    def __neg__(self):
+        """Negation: -A"""
+        return YawOperator(-self._expr, self.algebra)
+    
+    def __truediv__(self, other):
+        """Division by scalar."""
+        return YawOperator(self._expr / other, self.algebra)
+    
+    def __pow__(self, exp):
+        """Exponentiation."""
+        return YawOperator(self._expr ** exp, self.algebra)
+    
+    def adjoint(self):
+        """Hermitian conjugate: AÃ¢â‚¬Â  or A*"""
+        return YawOperator(Dagger(self._expr), self.algebra)
+    
+    @property
+    def H(self):
+        """Hermitian conjugate shortcut: A.H (numpy convention)
+        
+        Example:
+            >>> X.H  # Returns X† (same as X.adjoint())
+        """
+        return self.adjoint()
+    
+    @property
+    def dag(self):
+        """Dagger shortcut: A.dag (alternative notation)
+        
+        Example:
+            >>> X.dag  # Returns X† (same as X.adjoint())
+        """
+        return self.adjoint()
+    
+    @property
+    def d(self):
+        """Dagger shortcut: A.d (most concise)
+        
+        This is the recommended shortcut for adjoint/dagger operation.
+        
+        Example:
+            >>> X.d  # Returns X† (same as X.adjoint())
+            >>> (X * Z).d  # Returns Z† X† = Z X
+        """
+        return self.adjoint()
+    
+    @property
+    def T(self):
+        """Transpose shortcut: A.T (for quantum operators, same as adjoint)
+        
+        Note: In quantum mechanics, transpose typically means Hermitian conjugate.
+        For real operators, this is the same as matrix transpose.
+        
+        Example:
+            >>> X.T  # Returns X† (same as X.adjoint())
+        """
+        return self.adjoint()
+    
+    def normalize(self, verbose=False):
+        """Apply algebra normalization rules.
+        
+        Args:
+            verbose: If True, print normalization steps
+            
+        Returns:
+            Normalized YawOperator
+        """
+        if self.algebra:
+            return self.algebra.normalize(self, verbose=verbose)
+        return self
+    
+    def conj_op(self, other):
+        """Operator conjugation: self >> other = selfÃ¢â‚¬Â  * other * self
+        
+        This is the 'conjugate by' operation for operators.
+        For unitary U: U >> A = UÃ¢â‚¬Â  A U
+        
+        Args:
+            other: Operator to conjugate
+            
+        Returns:
+            Conjugated operator
+        """
+        return self.adjoint() * other * self
+    
+    def conj_state(self, state):
+        """State conjugation: self << state
+        
+        Returns a new state transformed by this operator.
+        For unitary U: U << |ÃË†Ã¢Å¸Â© is the transformed state.
+        
+        Args:
+            state: State to transform
+            
+        Returns:
+            ConjugatedState object
+        """
+        return ConjugatedState(self, state)
+    
+    def __str__(self):
+        """String representation with Python complex notation.
+        
+        Converts SymPy's 'I' (imaginary unit) to Python's '1j' notation
+        to avoid confusion with the identity operator I.
+        
+        Strategy: Only replace 'I' when it appears as part of a complex coefficient
+        (i.e., when I is multiplied with other operators), which indicates it's
+        the imaginary unit, not the identity operator.
+        
+        Key distinction:
+        - "2*I" (2 times identity) -> keep as "2*I"
+        - "2.0*I*X" (2i times X) -> convert to "2.0j*X"
+        - "I*X*Z" (i times X times Z) -> convert to "1j*X*Z"
+        - "I" (identity alone) -> keep as "I"
+        - "(1.0 + 1.0*I)*X" (complex coefficient) -> "(1.0+1.0j)*X"
+        """
+        s = str(self._expr)
+        
+        import re
+        
+        # Replace imaginary unit I in various contexts
+        
+        # 1. Pattern: number*I*OPERATOR (e.g., "1.0*I*X" -> "1j*X")
+        #    This is the most common pattern for complex coefficients
+        s = re.sub(r'(\d+\.?\d*)\*I\*([A-Z])', r'\1j*\2', s)
+        
+        # 2. Pattern: I*OPERATOR at start (e.g., "I*X*Z" -> "1j*X*Z")
+        s = re.sub(r'^I\*([A-Z])', r'1j*\1', s)
+        
+        # 3. Pattern: + I*OPERATOR (with space preserved)
+        s = re.sub(r'\+\s*I\*([A-Z])', r'+ 1j*\1', s)
+        
+        # 4. Pattern: - I*OPERATOR (no space after minus)
+        s = re.sub(r'\-\s*I\*([A-Z])', r'-1j*\1', s)
+        
+        # 5. Pattern: OPERATOR*I*OPERATOR (e.g., "X*I*Z" -> "X*1j*Z")
+        s = re.sub(r'([A-Z][A-Za-z0-9_]*)\*I\*([A-Z])', r'\1*1j*\2', s)
+        
+        # 6. Pattern: (parenthesized)*I*OPERATOR (e.g., "(-1)*I*X" -> "(-1)*1j*X")
+        s = re.sub(r'\)\*I\*([A-Z])', r')*1j*\1', s)
+        
+        # 7. Pattern: number*I within parentheses (e.g., "(1.0 + 2.0*I)" -> "(1.0+2.0j)")
+        #    This handles complex coefficients like (1+1j)*X
+        s = re.sub(r'(\d+\.?\d*)\*I(?!\*[A-Z])', r'\1j', s)
+        
+        # 8. Pattern: standalone I within numeric expressions (e.g., "0.5*I*(X + Z)")
+        #    Match I that's part of a numeric expression (preceded by *, +, -, or parenthesis)
+        s = re.sub(r'([\*\+\-\(])\s*I\s*\*\s*\(', r'\g<1>1j*(', s)
+        
+        # Clean up: 1.0j -> 1j, 0.0j -> 0j
+        s = re.sub(r'\b1\.0j\b', '1j', s)
+        s = re.sub(r'([^0-9])0\.0j\b', r'\g<1>0j', s)  # Keep leading digit
+        s = re.sub(r'^0\.0j\b', '0j', s)  # At start of string
+        
+        # Clean up spacing around complex numbers in parentheses
+        s = re.sub(r'\(\s*(\d+\.?\d*)\s*\+\s*(\d+\.?\d*)j\s*\)', r'(\1+\2j)', s)
+        s = re.sub(r'\(\s*(\d+\.?\d*)\s*\-\s*(\d+\.?\d*)j\s*\)', r'(\1-\2j)', s)
+        
+        return s
+    
+    def __repr__(self):
+        return f"YawOp({self._expr})"
+    
+    def __eq__(self, other):
+        if isinstance(other, YawOperator):
+            return self.normalize()._expr == other.normalize()._expr
+        return False
+
+    def __rshift__(self, other):
+        """Operator conjugation: U >> A means U >> A = UÃ¢â‚¬Â  A U
+        
+        Usage: H >> Z instead of H.conj_op(Z)
+        """
+        return self.conj_op(other)
+    
+    def __lshift__(self, state):
+        """Apply operator to state (conjugation): A << psi
+
+        Special cases:
+        - Identity returns state unchanged
+        - Projectors use duality with eigenstates
+        - Anticommuting operators flip eigenstates
+        """
+        # *** FIXED: Better identity check ***
+        if self.algebra:
+            # Check if this is identity by normalizing and checking string
+            try:
+                normalized = self.normalize()
+                if str(normalized._expr) == 'I' or normalized._expr == 1:
+                    return state
+            except:
+                pass
+
+        # Also check raw expression
+        if str(self._expr) == 'I':
+            return state
+
+        # Handle eigenstates specially
+        if isinstance(state, EigenState):
+            # Case 1: Eigenstate of the same operator
+            if self == state.observable:
+                # A << char(A, k) = ÃŽÂ»_k char(A, k)
+                # For now, just return the state (eigenvalue absorbed)
+                return state
+
+            # Case 2: Check if operators anticommute
+            if self.algebra and state.observable.algebra:
+                try:
+                    # Try to compute anticommutator {A, B}
+                    anticomm = (self * state.observable + state.observable * self).normalize()
+
+                    # Check if anticommutator is zero (operators anticommute)
+                    anticomm_str = str(anticomm._expr)
+                    if anticomm_str == '0' or abs(complex(anticomm._expr)) < 1e-10:
+                        # Anticommuting operators flip eigenstates!
+                        # For d=2: A << char(B, k) = char(B, 1-k)
+                        d = self.algebra.power_mod
+                        if d == 2:
+                            flipped_index = 1 - state.index
+                            return EigenState(state.observable, flipped_index, state.algebra)
+                        else:
+                            # For d > 2, more complex
+                            return TransformedState(state, self)
+
+                    # Try to compute commutator [A, B]
+                    comm = (self * state.observable - state.observable * self).normalize()
+                    comm_str = str(comm._expr)
+
+                    # Check if commutator is zero (operators commute)
+                    if comm_str == '0' or abs(complex(comm._expr)) < 1e-10:
+                        # Commuting operators: state remains eigenstate
+                        return state
+                except:
+                    # If computation fails, fall back
+                    pass
+
+            # Default: create transformed state
+            return TransformedState(state, self)
+
+        else:
+            return TransformedState(state, self)
+
+# ============================================================================
+# COMMUTATORS AND ANTICOMMUTATORS
+# ============================================================================
+
+def comm(A, B):
+    """Compute commutator: [A, B] = AB - BA
+    
+    The commutator measures how much two operators fail to commute.
+    - [A, B] = 0 means A and B commute
+    - [A, B] Ã¢â€°Â  0 means A and B don't commute
+    
+    Args:
+        A: First operator (YawOperator, TensorProduct, or TensorSum)
+        B: Second operator
+        
+    Returns:
+        Commutator [A, B]
+        
+    Example:
+        >>> comm(X, Z)  # Should be non-zero for Pauli operators
+        >>> comm(X, X)  # Should be zero (X commutes with itself)
+    """
+    return A * B - B * A
+
+
+def acomm(A, B):
+    """Compute anticommutator: {A, B} = AB + BA
+    
+    The anticommutator measures symmetric multiplication.
+    - {A, B} = 0 means A and B anticommute
+    - {A, B} Ã¢â€°Â  0 means they don't anticommute
+    
+    For qubits with Pauli operators:
+    - {X, Z} = 0 (anticommute)
+    - {X, X} = 2I (don't anticommute)
+    
+    Args:
+        A: First operator (YawOperator, TensorProduct, or TensorSum)
+        B: Second operator
+        
+    Returns:
+        Anticommutator {A, B}
+        
+    Example:
+        >>> acomm(X, Z)  # Should be zero for anticommuting Paulis
+        >>> acomm(X, X)  # Should be 2I
+    """
+    return A * B + B * A
+        
+# ============================================================================
+# TENSOR PRODUCTS
+# ============================================================================
+
+class TensorSum:
+    """Sum of tensor products: AÃ¢Å â€”B + CÃ¢Å â€”D + ..."""
+    
+    def __init__(self, terms):
+        """Create sum of terms."""
+        self.terms = list(terms)
+        
+        # Flatten nested TensorSums
+        flattened = []
+        for term in self.terms:
+            if isinstance(term, TensorSum):
+                flattened.extend(term.terms)
+            else:
+                flattened.append(term)
+        self.terms = flattened
+
+    def __invert__(self):
+        """Enable ~A syntax for normalization."""
+        return self.normalize()
+        
+    def __lshift__(self, state):
+        """Apply sum to state: (A + B) << psi
+
+        For controlled operations, filter terms by projector orthogonality.
+        Only terms where ALL projectors match the state contribute.
+        """
+        results = []
+        errors = []
+
+        for term in self.terms:
+            try:
+                if isinstance(term, TensorProduct) and isinstance(state, TensorState):
+                    if len(term.factors) != len(state.states):
+                        continue
+
+                    # Check only projectors for orthogonality
+                    term_contributes = True
+                    for op, st in zip(term.factors, state.states):
+                        # Only check projectors - they have clear orthogonality
+                        if isinstance(op, Projector):
+                            exp_val = st.expect(op)
+
+                            # If projector is orthogonal to state, skip this term
+                            if abs(exp_val) < 1e-10:
+                                term_contributes = False
+                                break
+
+                    if not term_contributes:
+                        continue
+
+                    # This term contributes - apply it
+                    transformed_states = []
+                    for op, st in zip(term.factors, state.states):
+                        transformed_states.append(op << st)
+
+                    result = TensorState(transformed_states)
+                    results.append(result)
+
+                elif isinstance(term, YawOperator):
+                    result = term << state
+                    results.append(result)
+                else:
+                    continue
+
+            except Exception as e:
+                # Track errors for debugging
+                errors.append((term, str(e)))
+                continue
+
+        # Return the result(s)
+        if len(results) == 1:
+            return results[0]
+        elif len(results) == 0:
+            # *** Better error message ***
+            if errors:
+                error_msg = "Errors applying terms:\n"
+                for term, err in errors[:3]:  # Show first 3 errors
+                    error_msg += f"  {term}: {err}\n"
+                raise ValueError(error_msg)
+            else:
+                raise ValueError("No terms in sum could be applied to state (all filtered by projector orthogonality)")
+        else:
+            # Multiple results - need superposition
+            print(f"Warning: Multiple terms contributed ({len(results)}), returning first")
+            return results[0]
+        
+    def __str__(self):
+        """Display as sum."""
+        return " + ".join(str(t) for t in self.terms)
+    
+    def __repr__(self):
+        """REPL display."""
+        return self.__str__()
+    
+    def __add__(self, other):
+        """Add another term or sum."""
+        if isinstance(other, TensorSum):
+            return TensorSum(self.terms + other.terms)
+        elif isinstance(other, (TensorProduct, YawOperator)):
+            return TensorSum(self.terms + [other])
+        else:
+            raise TypeError(f"Cannot add TensorSum with {type(other)}")
+    
+    def __radd__(self, other):
+        """Right addition."""
+        if isinstance(other, (TensorProduct, YawOperator)):
+            return TensorSum([other] + self.terms)
+        else:
+            return self.__add__(other)
+    
+    def __rshift__(self, operator):
+        """Conjugate: (A + B) >> C"""
+        # For now, not supported
+        raise NotImplementedError("Cannot conjugate with TensorSum yet")
+
+    def __mul__(self, other):
+        """Scalar multiplication: c * (A + B) = cA + cB"""
+        if isinstance(other, (int, float, complex)):
+            return TensorSum([term * other for term in self.terms])
+        
+        if hasattr(other, 'is_number') and other.is_number:
+            return TensorSum([term * other for term in self.terms])
+        
+        # Element-wise multiplication not yet supported for operators
+        raise TypeError(f"Cannot multiply TensorSum with {type(other)}")
+    
+    def __rmul__(self, other):
+        """Right multiplication: c * (A + B)"""
+        if isinstance(other, (int, float, complex)):
+            return TensorSum([other * term for term in self.terms])
+        
+        if hasattr(other, 'is_number') and other.is_number:
+            return TensorSum([other * term for term in self.terms])
+        
+        return self.__mul__(other)
+    
+    def __sub__(self, other):
+        """Subtraction: (A + B) - C"""
+        if isinstance(other, (TensorProduct, YawOperator, TensorSum)):
+            neg_other = other * (-1)
+            return self + neg_other
+        else:
+            raise TypeError(f"Cannot subtract {type(other)} from TensorSum")
+    
+    def __rsub__(self, other):
+        """Right subtraction: A - (B + C)"""
+        if isinstance(other, (TensorProduct, YawOperator)):
+            neg_self = self * (-1)
+            return other + neg_self
+        else:
+            raise TypeError(f"Cannot subtract TensorSum from {type(other)}")
+    
+    def __neg__(self):
+        """Negation: -(A + B) = -A + -B"""
+        return TensorSum([term * (-1) for term in self.terms])
+
+    def normalize(self, verbose=False):
+        """Normalize and simplify the sum by combining like terms."""
+        from collections import defaultdict
+        from sympy import Mul, Symbol
+
+        # Step 1: Normalize each term
+        normalized_terms = []
+        for term in self.terms:
+            if hasattr(term, 'normalize'):
+                normalized_terms.append(term.normalize(verbose=verbose))
+            else:
+                normalized_terms.append(term)
+
+        # Step 2: Extract coefficients and canonical structures
+        canonical_terms = []
+
+        for term in normalized_terms:
+            if isinstance(term, TensorProduct):
+                # Extract coefficient from entire tensor product
+                total_coeff = 1
+                canonical_factors = []
+
+                for factor in term.factors:
+                    if isinstance(factor, YawOperator):
+                        # Extract coefficient from this factor
+                        expr = factor._expr
+
+                        if isinstance(expr, Mul):
+                            factor_coeff = 1
+                            non_coeff_parts = []
+
+                            for arg in expr.args:
+                                if arg.is_number:
+                                    factor_coeff *= arg
+                                else:
+                                    non_coeff_parts.append(arg)
+
+                            total_coeff *= factor_coeff
+
+                            if non_coeff_parts:
+                                from sympy import Mul as SympyMul
+                                canonical_factors.append(
+                                    YawOperator(SympyMul(*non_coeff_parts), factor.algebra)
+                                )
+                            else:
+                                # Pure scalar factor - represents identity
+                                # *** FIXED: Extract SymPy expression from I ***
+                                I_expr = factor.algebra.I._expr if hasattr(factor.algebra.I, '_expr') else Symbol('I')
+                                canonical_factors.append(
+                                    YawOperator(I_expr, factor.algebra)
+                                )
+                        elif expr.is_number:
+                            # Pure number
+                            total_coeff *= expr
+                            # Treat as identity
+                            I_expr = factor.algebra.I._expr if hasattr(factor.algebra.I, '_expr') else Symbol('I')
+                            canonical_factors.append(
+                                YawOperator(I_expr, factor.algebra)
+                            )
+                        else:
+                            # No coefficient
+                            canonical_factors.append(factor)
+                    else:
+                        canonical_factors.append(factor)
+
+                # Create canonical structure
+                if canonical_factors:
+                    canonical_structure = TensorProduct(canonical_factors)
+                else:
+                    canonical_structure = None
+
+                canonical_terms.append((total_coeff, canonical_structure))
+
+            elif isinstance(term, YawOperator):
+                # Single operator
+                expr = term._expr
+
+                if isinstance(expr, Mul):
+                    coeff = 1
+                    non_coeff_parts = []
+
+                    for arg in expr.args:
+                        if arg.is_number:
+                            coeff *= arg
+                        else:
+                            non_coeff_parts.append(arg)
+
+                    if non_coeff_parts:
+                        from sympy import Mul as SympyMul
+                        canonical_terms.append((coeff, YawOperator(SympyMul(*non_coeff_parts), term.algebra)))
+                    else:
+                        canonical_terms.append((coeff, None))
+                elif expr.is_number:
+                    canonical_terms.append((expr, None))
+                else:
+                    canonical_terms.append((1, term))
+            else:
+                canonical_terms.append((1, term))
+
+        # Step 3: Group by canonical structure
+        structure_groups = defaultdict(list)
+
+        for coeff, structure in canonical_terms:
+            # Create key from structure
+            if structure is None:
+                key = "scalar"
+            elif isinstance(structure, TensorProduct):
+                # Key from normalized factor strings
+                factor_strs = []
+                for f in structure.factors:
+                    if isinstance(f, YawOperator):
+                        f_norm = f.normalize() if hasattr(f, 'normalize') else f
+                        factor_strs.append(str(f_norm._expr))
+                    else:
+                        factor_strs.append(str(f))
+                key = " @ ".join(factor_strs)
+            else:
+                # YawOperator
+                s_norm = structure.normalize() if hasattr(structure, 'normalize') else structure
+                key = str(s_norm._expr)
+
+            structure_groups[key].append((coeff, structure))
+
+        # Step 4: Combine coefficients for each structure
+        combined = []
+
+        for key, coeff_struct_pairs in structure_groups.items():
+            # Sum coefficients
+            total_coeff = sum(c for c, _ in coeff_struct_pairs)
+
+            # *** FIXED: Better zero check ***
+            try:
+                coeff_value = complex(total_coeff)
+                if abs(coeff_value) < 1e-10:
+                    continue
+            except:
+                # Can't convert to number, keep it
+                pass
+
+            # Get structure
+            _, structure = coeff_struct_pairs[0]
+
+            # Create result term
+            if structure is None:
+                # Pure scalar - skip if we don't have algebra
+                continue
+            elif abs(complex(total_coeff) - 1) < 1e-10:
+                # Coefficient is 1
+                combined.append(structure)
+            elif abs(complex(total_coeff) + 1) < 1e-10:
+                # Coefficient is -1
+                combined.append((-1) * structure)
+            else:
+                # Apply coefficient using * operator (not constructor)
+                combined.append(total_coeff * structure)
+
+        # Step 5: Return simplified result
+        if len(combined) == 0:
+            # Everything cancelled
+            return 0
+        elif len(combined) == 1:
+            return combined[0]
+        else:
+            return TensorSum(combined)
+
+    def __matmul__(self, other):
+        """Tensor product: (A + B + ...) @ C
+
+        Distributes: (A + B) @ C = A @ C + B @ C
+        """
+        if isinstance(other, YawOperator):
+            # Check if other is a sum
+            if isinstance(other._expr, Add):
+                # Double distribution: (A + B) @ (C + D)
+                new_terms = []
+                for self_term in self.terms:
+                    for other_term_expr in other._expr.args:
+                        other_term = YawOperator(other_term_expr, other.algebra)
+                        new_terms.append(self_term @ other_term)
+                return TensorSum(new_terms)
+            else:
+                # Simple distribution: (A + B) @ C
+                terms = [term @ other for term in self.terms]
+                return TensorSum(terms)
+
+        elif isinstance(other, TensorProduct):
+            # (A + B) @ (C Ã¢Å â€” D) - distribute left over right
+            terms = [term @ other for term in self.terms]
+            return TensorSum(terms)
+
+        elif isinstance(other, TensorSum):
+            # (A + B) @ (C + D) - full distribution
+            new_terms = []
+            for self_term in self.terms:
+                for other_term in other.terms:
+                    new_terms.append(self_term @ other_term)
+            return TensorSum(new_terms)
+
+        else:
+            raise TypeError(f"Cannot tensor TensorSum with {type(other)}")
+        
+    def _extract_coefficient(self, tensor_prod):
+        """Extract coefficient from a tensor product.
+        
+        Returns (coefficient, structure) where structure is the tensor
+        product without the coefficient.
+        """
+        if not isinstance(tensor_prod, TensorProduct):
+            return (1, tensor_prod)
+        
+        # Check if first factor has a scalar coefficient
+        first_factor = tensor_prod.factors[0]
+        
+        if isinstance(first_factor, YawOperator):
+            expr = first_factor._expr
+            
+            # Check if it's a scalar multiple
+            from sympy import Mul
+            if isinstance(expr, Mul):
+                coeff = 1
+                non_coeff_args = []
+                
+                for arg in expr.args:
+                    if arg.is_number:
+                        coeff *= arg
+                    else:
+                        non_coeff_args.append(arg)
+                
+                if non_coeff_args:
+                    # Reconstruct first factor without coefficient
+                    from sympy import Mul as SympyMul
+                    new_first = YawOperator(SympyMul(*non_coeff_args), first_factor.algebra)
+                    new_factors = [new_first] + tensor_prod.factors[1:]
+                    return (coeff, TensorProduct(new_factors))
+                else:
+                    # Pure scalar - return rest of factors
+                    if len(tensor_prod.factors) > 1:
+                        return (coeff, TensorProduct(tensor_prod.factors[1:]))
+                    else:
+                        return (coeff, None)
+            
+            # No coefficient
+            return (1, tensor_prod)
+        
+        return (1, tensor_prod)
+    
+    def _extract_coefficient_op(self, op):
+        """Extract coefficient from a YawOperator."""
+        from sympy import Mul
+        
+        expr = op._expr
+        
+        if isinstance(expr, Mul):
+            coeff = 1
+            non_coeff_args = []
+            
+            for arg in expr.args:
+                if arg.is_number:
+                    coeff *= arg
+                else:
+                    non_coeff_args.append(arg)
+            
+            if non_coeff_args:
+                from sympy import Mul as SympyMul
+                return (coeff, YawOperator(SympyMul(*non_coeff_args), op.algebra))
+            else:
+                return (coeff, None)
+        
+        return (1, op)
+    
+    def _get_structure_key(self, structure):
+        """Get a string key representing the structure of a term."""
+        if structure is None:
+            return "scalar"
+        
+        if isinstance(structure, TensorProduct):
+            # Create key from normalized factors
+            factor_keys = []
+            for factor in structure.factors:
+                if isinstance(factor, YawOperator):
+                    # Normalize and get string
+                    norm_factor = factor.normalize() if hasattr(factor, 'normalize') else factor
+                    factor_keys.append(str(norm_factor._expr))
+                else:
+                    factor_keys.append(str(factor))
+            
+            return " @ ".join(factor_keys)
+        
+        elif isinstance(structure, YawOperator):
+            norm = structure.normalize() if hasattr(structure, 'normalize') else structure
+            return str(norm._expr)
+        
+        return str(structure)
+
+class TensorProduct:
+    """Tensor product of operators: A Ã¢Å â€” B Ã¢Å â€” C"""
+    
+    def __init__(self, factors):
+        """Create tensor product.
+        
+        Args:
+            factors: List of YawOperator instances
+        """
+        # Ensure factors is a list
+        if not isinstance(factors, list):
+            factors = list(factors)
+        
+        self.factors = factors
+        
+        if not self.factors:
+            raise ValueError("TensorProduct requires at least one factor")
+        
+        # *** FIX: Don't try to access algebra on the list ***
+        # Infer algebra from first factor (if any have algebra)
+        self.algebra = None
+        for factor in self.factors:
+            if isinstance(factor, YawOperator) and hasattr(factor, 'algebra') and factor.algebra is not None:
+                self.algebra = factor.algebra
+                break
+
+    def __invert__(self):
+        """Enable ~A syntax for normalization."""
+        return self.normalize()
+            
+    def __lshift__(self, state):
+        """Apply tensor product to state: (A Ã¢Å â€” B) << (|ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©)"""
+        if isinstance(state, TensorState):
+            if len(self.factors) != len(state.states):
+                raise ValueError(
+                    f"Tensor product has {len(self.factors)} factors "
+                    f"but state has {len(state.states)} factors"
+                )
+            
+            # Apply each factor to corresponding state
+            transformed_states = []
+            for op, st in zip(self.factors, state.states):
+                transformed_states.append(op << st)
+            
+            return TensorState(transformed_states)
+        else:
+            # Single state - apply all factors sequentially?
+            # This is ambiguous, so raise error
+            raise ValueError("Cannot apply TensorProduct to non-tensor state")
+            
+    def __matmul__(self, other):
+        """Extend tensor product: (A Ã¢Å â€” B) @ C = A Ã¢Å â€” B Ã¢Å â€” C
+
+        Distributes over sums: (A Ã¢Å â€” B) @ (C + D) = A Ã¢Å â€” B Ã¢Å â€” C + A Ã¢Å â€” B Ã¢Å â€” D
+        """
+        from sympy import Add
+
+        if isinstance(other, YawOperator):
+            # Check if other is a sum
+            if isinstance(other._expr, Add):
+                # Distribute
+                terms = []
+                for term in other._expr.args:
+                    term_op = YawOperator(term, other.algebra)
+                    extended = TensorProduct(self.factors + [term_op])
+                    terms.append(extended)
+
+                return TensorSum(terms)
+            else:
+                return TensorProduct(self.factors + [other])
+
+        elif isinstance(other, TensorProduct):
+            return TensorProduct(self.factors + other.factors)
+
+        elif isinstance(other, TensorSum):
+            # (A Ã¢Å â€” B) @ (C + D + ...) 
+            distributed_terms = [self @ term for term in other.terms]
+            return TensorSum(distributed_terms)
+
+        else:
+            raise TypeError(f"Cannot tensor TensorProduct with {type(other)}")
+    
+    def __add__(self, other):
+        """Addition creates a sum of tensors."""
+        if isinstance(other, TensorProduct):
+            return TensorSum([self, other])
+        elif isinstance(other, TensorSum):
+            return TensorSum([self] + other.terms)
+        elif isinstance(other, YawOperator):
+            return TensorSum([self, other])
+        else:
+            raise TypeError(f"Cannot add TensorProduct with {type(other)}")
+    
+    def __radd__(self, other):
+        """Right addition."""
+        if isinstance(other, (YawOperator, TensorProduct)):
+            return TensorSum([other, self])
+        elif isinstance(other, TensorSum):
+            return TensorSum(other.terms + [self])
+        else:
+            raise TypeError(f"Cannot add {type(other)} with TensorProduct")
+    
+    def __truediv__(self, other):
+        """Division by scalar."""
+        if isinstance(other, (int, float, complex)) or (hasattr(other, 'is_number') and other.is_number):
+            new_factors = self.factors.copy()
+            new_factors[0] = new_factors[0] / other
+            return TensorProduct(new_factors)
+        else:
+            raise TypeError(f"Cannot divide TensorProduct by {type(other)}")
+    
+    def normalize(self, verbose=False):
+        """Normalize each factor separately."""
+        normalized_factors = []
+        for factor in self.factors:
+            if isinstance(factor, YawOperator) and hasattr(factor, 'algebra') and factor.algebra:
+                normalized_factors.append(factor.normalize(verbose=verbose))
+            else:
+                normalized_factors.append(factor)
+        return TensorProduct(normalized_factors)
+
+    def __mul__(self, other):
+        """Multiplication of tensor products or scalars.
+        
+        For scalars: c * (A Ã¢Å â€” B) = (cA) Ã¢Å â€” B
+        For tensor products: (AÃ¢Å â€”B) * (CÃ¢Å â€”D) = (A*C) Ã¢Å â€” (B*D)
+        """
+        # Scalar multiplication
+        if isinstance(other, (int, float, complex)):
+            new_factors = self.factors.copy()
+            new_factors[0] = new_factors[0] * other
+            return TensorProduct(new_factors)
+        
+        # Check for SymPy numbers
+        if hasattr(other, 'is_number') and other.is_number:
+            new_factors = self.factors.copy()
+            new_factors[0] = new_factors[0] * other
+            return TensorProduct(new_factors)
+        
+        # Tensor product multiplication (element-wise)
+        elif isinstance(other, TensorProduct):
+            if len(self.factors) != len(other.factors):
+                raise ValueError(
+                    f"Cannot multiply tensor products of different lengths: "
+                    f"{len(self.factors)} vs {len(other.factors)}"
+                )
+            
+            # Element-wise multiplication: (AÃ¢Å â€”B) * (CÃ¢Å â€”D) = (A*C) Ã¢Å â€” (B*D)
+            new_factors = []
+            for f1, f2 in zip(self.factors, other.factors):
+                new_factors.append(f1 * f2)
+            
+            return TensorProduct(new_factors)
+        
+        else:
+            raise TypeError(f"Cannot multiply TensorProduct with {type(other)}")
+    
+    def __rmul__(self, other):
+        """Right multiplication: c * (A Ã¢Å â€” B)
+        
+        This is called when the left operand doesn't know how to multiply
+        with TensorProduct (e.g., int * TensorProduct).
+        """
+        # *** FIXED: Handle scalar on the left ***
+        if isinstance(other, (int, float, complex)):
+            new_factors = self.factors.copy()
+            new_factors[0] = other * new_factors[0]
+            return TensorProduct(new_factors)
+        
+        # Check for SymPy numbers
+        if hasattr(other, 'is_number') and other.is_number:
+            new_factors = self.factors.copy()
+            new_factors[0] = other * new_factors[0]
+            return TensorProduct(new_factors)
+        
+        # For other types, try regular multiplication
+        return self.__mul__(other)
+    
+    def __sub__(self, other):
+        """Subtraction: A - B"""
+        # *** FIXED: More explicit approach ***
+        if isinstance(other, TensorProduct):
+            neg_other = other * (-1)
+            return self + neg_other
+        elif isinstance(other, YawOperator):
+            neg_other = other * (-1)
+            return self + neg_other
+        elif isinstance(other, TensorSum):
+            neg_other = other * (-1)
+            return self + neg_other
+        else:
+            raise TypeError(f"Cannot subtract {type(other)} from TensorProduct")
+    
+    def __rsub__(self, other):
+        """Right subtraction: B - self"""
+        if isinstance(other, (TensorProduct, YawOperator, TensorSum)):
+            neg_self = self * (-1)
+            return other + neg_self
+        else:
+            raise TypeError(f"Cannot subtract TensorProduct from {type(other)}")
+    
+    def __neg__(self):
+        """Negation: -A = (-1) * A"""
+        return self * (-1)
+    
+    def __str__(self):
+        factor_strs = [str(f) for f in self.factors]
+        return " @ ".join(factor_strs)
+    
+    def __repr__(self):
+        # *** FIXED: Return string directly ***
+        return self.__str__()
+
+# ============================================================================
+# ALGEBRA
+# ============================================================================
+
+class Algebra:
+    """Algebraic presentation <G|R> with generators and relations.
+    
+    Manages a non-commutative algebra defined by:
+    - Generators: Named operators (e.g., X, Z for Pauli algebra)
+    - Relations: Rules like hermiticity, unitarity, anticommutation
+    
+    Provides symbolic normalization based on rewrite rules compiled
+    from the relations.
+    
+    Attributes:
+        generator_names: List of generator names
+        generators: Dict mapping names to YawOperator instances
+        relation_specs: List of relation specifiers
+        rules: Compiled rewrite rules
+        I: Identity operator
+    """
+    
+    def __init__(self, gens: List[str], rels: List[str]):
+        """Create algebra from generators and relations.
+        
+        Args:
+            gens: List of generator names (e.g., ['X', 'Z'])
+            rels: List of relation specifiers (e.g., ['herm', 'unit', 'anti'])
+        """
+        self.generator_names = gens
+        self.relation_specs = rels
+        
+        # Create SymPy operators
+        self.generators = {}
+        for name in gens:
+            sympy_op = Operator(name)
+            self.generators[name] = YawOperator(sympy_op, self)
+        
+        # Identity operator
+        self.I = YawOperator(Operator('I'), self)
+        
+        # Compile relations to rewrite rules
+        self.rules = self._compile_relations(rels)
+    
+    def __getattr__(self, name):
+        """Allow convenient access: algebra.X instead of algebra.generators['X']"""
+        if name in self.generators:
+            return self.generators[name]
+        raise AttributeError(f"Generator {name} not in algebra")
+    
+    def _compile_relations(self, rels: List[str]) -> List[Tuple]:
+        """Convert relation specifiers to SymPy rewrite rules."""
+        import re
+
+        rules = []
+        sympy_gens = {name: self.generators[name]._expr 
+                      for name in self.generator_names}
+        sympy_I = self.I._expr
+
+        # Store braiding phase (default to None)
+        self.braid_phase = None
+
+        # *** NEW: Store power modulus (default to None) ***
+        self.power_mod = None
+
+        # Track if we have herm and unit (implies pow(2))
+        has_herm = 'herm' in rels
+        has_unit = 'unit' in rels
+
+        for rel in rels:
+            if rel == 'herm':
+                # Hermitian: XÃ¢â‚¬Â  = X
+                for name, op_expr in sympy_gens.items():
+                    rules.append((Dagger(op_expr), op_expr))
+
+            elif rel == 'unit':
+                # Unitary: XÃ¢â‚¬Â X = I
+                for name, op_expr in sympy_gens.items():
+                    rules.append((op_expr * Dagger(op_expr), sympy_I))
+                    rules.append((Dagger(op_expr) * op_expr, sympy_I))
+
+            elif rel == 'anti':
+                # Anticommutation: XY = -YX (special case of braid(-1))
+                self.braid_phase = -1
+
+            elif rel.startswith('braid('):
+                # Braiding relation: XY = Ãâ€° YX
+                match = re.match(r'braid\((.*)\)', rel)
+                if match:
+                    phase_expr = match.group(1)
+                    # Evaluate the phase expression
+                    from sympy import sympify, exp, pi, I as sympy_I_const
+                    try:
+                        # Create namespace for evaluation
+                        phase_namespace = {
+                            'exp': exp,
+                            'pi': pi,
+                            'I': sympy_I_const,
+                            'i': sympy_I_const,
+                        }
+                        self.braid_phase = sympify(phase_expr, locals=phase_namespace)
+                    except Exception as e:
+                        print(f"Warning: Could not parse braid phase '{phase_expr}': {e}")
+                        self.braid_phase = sympify(phase_expr)
+
+            elif rel.startswith('pow('):
+                # Power relation: X^n = I
+                match = re.match(r'pow\((\d+)\)', rel)
+                if match:
+                    n = int(match.group(1))
+                    self.power_mod = n  # *** Store the modulus ***
+                    for name, op_expr in sympy_gens.items():
+                        rules.append((op_expr**n, sympy_I))
+
+        # Derive pow(2) from herm + unit
+        has_explicit_pow = any(rel.startswith('pow(') for rel in rels)
+        if has_herm and has_unit and not has_explicit_pow:
+            # Hermitian + Unitary Ã¢Å¸Â¹ XÃ‚Â² = I
+            self.power_mod = 2  # *** Store derived modulus ***
+            for name, op_expr in sympy_gens.items():
+                rules.append((op_expr**2, sympy_I))
+
+        # Add identity simplification rules
+        for name, op_expr in sympy_gens.items():
+            rules.append((op_expr * sympy_I, op_expr))
+            rules.append((sympy_I * op_expr, op_expr))
+
+        rules.append((Dagger(sympy_I), sympy_I))
+            
+        # Add identity power rules
+        max_ident_power = 100
+        for n in range(2, max_ident_power):
+            rules.append((sympy_I**n, sympy_I))
+
+        return rules
+    
+    def _simplify_identity(self, expr):
+        """Remove identity operators from products."""
+        sympy_I = self.I._expr
+        
+        if isinstance(expr, Mul):
+            args = list(expr.args)
+            new_args = [arg for arg in args if arg != sympy_I]
+            
+            if not new_args:
+                return sympy_I
+            elif len(new_args) == 1:
+                return new_args[0]
+            else:
+                return Mul(*new_args)
+        
+        elif isinstance(expr, Add):
+            return Add(*[self._simplify_identity(term) for term in expr.args])
+        
+        return expr
+    
+    def _reduce_powers(self, expr):
+        """Reduce higher powers according to pow(n) relations.
+
+        If generators satisfy X^n = I, then X^m = X^(m mod n).
+        """
+        if self.power_mod is None:
+            return expr
+
+        gen_exprs = [self.generators[name]._expr for name in self.generator_names]
+        sympy_I = self.I._expr
+
+        def reduce_term(term):
+            if isinstance(term, Pow):
+                # Identity powers: I^n = I
+                if term.base == sympy_I and term.exp > 1:
+                    return sympy_I
+                # Generator powers: reduce modulo power_mod
+                if term.base in gen_exprs and term.exp >= self.power_mod:
+                    new_exp = term.exp % self.power_mod
+                    return sympy_I if new_exp == 0 else term.base**new_exp
+            elif isinstance(term, Mul):
+                new_args = [reduce_term(arg) for arg in term.args]
+                return Mul(*new_args)
+            return term
+
+        if isinstance(expr, Add):
+            return Add(*[reduce_term(term) for term in expr.args])
+        else:
+            return reduce_term(expr)
+    
+    def _apply_braiding(self, expr):
+        """Apply braiding relations: XY = Ãâ€° YX
+
+        Uses bubble sort to put operators in canonical order,
+        accumulating the braiding phase for each swap.
+
+        For anticommutation: Ãâ€° = -1 (XY = -YX)
+        For general braiding: Ãâ€° = exp(2Ãâ‚¬i/d) or other phase
+        """
+        # Only apply if we have a braiding phase
+        if self.braid_phase is None:
+            return expr
+
+        gen_exprs = [self.generators[name]._expr for name in self.generator_names]
+
+        if isinstance(expr, Mul):
+            args = list(expr.args)
+
+            # Separate coefficient from operators
+            coeff = 1
+            ops = []
+            for arg in args:
+                if isinstance(arg, SympyNumber) or arg.is_number:
+                    coeff *= arg
+                else:
+                    ops.append(arg)
+
+            # Bubble sort into canonical order, accumulating phase
+            changed = True
+            while changed:
+                changed = False
+                for i in range(len(ops) - 1):
+                    if ops[i] in gen_exprs and ops[i+1] in gen_exprs:
+                        idx_i = gen_exprs.index(ops[i])
+                        idx_j = gen_exprs.index(ops[i+1])
+
+                        if idx_i > idx_j:  # Wrong order - need to swap
+                            ops[i], ops[i+1] = ops[i+1], ops[i]
+                            coeff *= self.braid_phase  # Accumulate phase
+                            changed = True
+                            break
+
+            # Reconstruct
+            if ops:
+                return coeff * Mul(*ops) if coeff != 1 else Mul(*ops)
+            else:
+                return coeff
+
+        elif isinstance(expr, Add):
+            return Add(*[self._apply_braiding(term) for term in expr.args])
+
+        return expr
+    
+    def normalize(self, yaw_op: YawOperator, verbose=False) -> YawOperator:
+        """Apply rewrite rules until convergence."""
+        expr = expand(yaw_op._expr)
+
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"NORMALIZING: {expr}")
+            print(f"{'='*60}")
+
+        max_iterations = 50
+        for iteration in range(max_iterations):
+            old_expr = expr
+
+            # Apply standard rewrite rules
+            for rule in self.rules:
+                if isinstance(rule, tuple) and len(rule) == 2:
+                    pattern, replacement = rule
+                    new_expr = expr.replace(pattern, replacement)
+                    if new_expr != expr:
+                        if verbose:
+                            print(f"  Ã¢Å“â€œ Rule applied: {expr} Ã¢â€ â€™ {new_expr}")
+                        expr = new_expr
+
+            # Reduce higher powers
+            new_expr = self._reduce_powers(expr)
+            if new_expr != expr:
+                if verbose:
+                    print(f"  Ã¢Å“â€œ Powers reduced: {expr} Ã¢â€ â€™ {new_expr}")
+                expr = new_expr
+
+            # Apply braiding (replaces old anticommutation)
+            if self.braid_phase is not None:
+                new_expr = self._apply_braiding(expr)
+                if new_expr != expr:
+                    if verbose:
+                        phase_str = str(self.braid_phase)
+                        print(f"  Ã¢â‚¬Â¢ Braiding applied (Ãâ€°={phase_str}): {expr}")
+                    expr = new_expr
+
+            # Simplify identities
+            new_expr = self._simplify_identity(expr)
+            if new_expr != expr:
+                if verbose:
+                    print(f"  Ã¢Å“â€œ Identity simplified: {expr} Ã¢â€ â€™ {new_expr}")
+                expr = new_expr
+
+            expr = expand(expr)
+
+            if expr == old_expr:
+                if verbose:
+                    print(f"  Ã¢â‚¬Â¢ Converged")
+                break
+
+        if verbose:
+            print(f"FINAL: {expr}")
+            print(f"{'='*60}\n")
+
+        return YawOperator(expr, self)
+
+    def __str__(self):
+        """Human-readable string representation."""
+        gens = ', '.join(self.generators.keys())
+
+        rels = []
+        # *** FIXED: Use hasattr to safely check attributes ***
+        if hasattr(self, 'hermitian') and self.hermitian:
+            rels.append('herm')
+        if hasattr(self, 'unitary') and self.unitary:
+            rels.append('unit')
+        if hasattr(self, 'power_mod') and self.power_mod:
+            rels.append(f'pow({self.power_mod})')
+        if hasattr(self, 'anticommuting'):
+            if isinstance(self.anticommuting, list):
+                rels.append('anti')
+            elif self.anticommuting:
+                rels.append('anti')
+        if hasattr(self, 'braiding_phase') and self.braiding_phase is not None:
+            rels.append(f'braid({self.braiding_phase})')
+
+        rels_str = ', '.join(rels) if rels else '...'
+        return f"<{gens} | {rels_str}>"
+
+    def __repr__(self):
+        """Detailed representation."""
+        return self.__str__()
+
+def qudit(d = 2):
+    """Create d-level qudit algebra.
+    
+    For Pd-level systems, generators satisfy:
+    - X^d = Z^d = I (power relation)
+    - XZ = Ãâ€° ZX where Ãâ€° = exp(2Ãâ‚¬i/d) (braiding)
+    
+    Args:
+        d: Dimension of the qudit (d=2 for qubit, d=3 for qutrit, etc.)
+        
+    Returns:
+        Algebra instance configured for d-level system
+    """
+    from sympy import pi, I as sympy_I, exp
+    
+    # Compute braiding phase
+    omega = exp(2*pi*sympy_I/d)
+
+    if d == 2:
+        # Qubits: use anticommutation
+        return Algebra(
+            gens=['X', 'Z'],
+            rels=['herm', 'unit', 'anti']
+        )
+    else:
+        return Algebra(
+            gens=['X', 'Z'],
+            rels=['herm', 'unit', f'pow({d})', f'braid(exp(2*pi*I/{d}))']
+        )
+
+def qubit():
+    return qudit(2)
+    
+# ============================================================================
+# STATES
+# ============================================================================
+
+class State:
+    """Base class for quantum states as functionals."""
+    
+    def expect(self, operator, _depth=0):
+        """Compute expectation value."""
+        raise NotImplementedError("Subclasses must implement expect()")
+    
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+    
+    def __matmul__(self, other):
+        """Tensor product of states: |ÃË†Ã¢Å¸Â© @ |Ãâ€ Ã¢Å¸Â© = |ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©"""
+        if isinstance(other, State):
+            # Both are states
+            if isinstance(self, TensorState):
+                if isinstance(other, TensorState):
+                    # Both tensor states: flatten
+                    return TensorState(self.states + other.states)
+                else:
+                    # Self is tensor, other is simple
+                    return TensorState(self.states + [other])
+            else:
+                if isinstance(other, TensorState):
+                    # Self is simple, other is tensor
+                    return TensorState([self] + other.states)
+                else:
+                    # Both simple states
+                    return TensorState([self, other])
+        else:
+            raise TypeError(f"Cannot tensor State with {type(other)}")
+    
+    def __rmatmul__(self, other):
+        """Right tensor product: supports (A + B) @ C
+
+        Distributes: (A + B) @ C = A @ C + B @ C
+        """
+        from sympy import Add
+
+        if isinstance(other, YawOperator):
+            # Check if other is a sum
+            if isinstance(other._expr, Add):
+                # Distribute
+                terms = []
+                for term in other._expr.args:
+                    term_op = YawOperator(term, other.algebra)
+                    terms.append(term_op @ self)
+
+                result = terms[0]
+                for term in terms[1:]:
+                    result = result + term
+                return result
+            else:
+                return other.__matmul__(self)
+        else:
+            return self.__matmul__(other)
+    
+class EigenState(State):
+    """Eigenstate of an observable: |ÃŽÂ»Ã¢Å¸Â© such that A|ÃŽÂ»Ã¢Å¸Â© = ÃŽÂ»|ÃŽÂ»Ã¢Å¸Â©.
+    
+    Attributes:
+        observable: The operator this is an eigenstate of
+        index: Position in spectrum (0 = largest eigenvalue)
+        algebra: Associated algebra
+        eigenvalue: The eigenvalue (1.0 or -1.0 for now)
+    """
+    
+    def __init__(self, observable: YawOperator, index: int, algebra):
+        """Create eigenstate of observable.
+        
+        Args:
+            observable: Operator to be eigenstate of
+            index: Spectrum position (0 for largest eigenvalue)
+            algebra: Associated algebra
+        """
+        self.observable = observable
+        self.index = index
+        self.algebra = algebra
+        # For now, hardcode Pauli-like eigenvalues
+        # TODO: Compute from minimal polynomial
+        self.eigenvalue = 1.0 if index == 0 else -1.0
+    
+    def expect(self, op: YawOperator, _depth=0) -> complex:
+        """Compute expectation value via algebraic simplification.
+        
+        Uses linearity of expectation and handles:
+        - Scalars
+        - Identity
+        - Powers of observable
+        - Sums (via linearity)
+        - Products with coefficients
+        - Off-diagonal terms (returns 0)
+        """
+        if _depth > 10:
+            return 0.0
+
+        if isinstance(op, Projector):
+            if self.observable == op.base_operator:
+                # Duality: Ã¢Å¸Â¨char(A,j) | proj(A,k) | char(A,j)Ã¢Å¸Â© = ÃŽÂ´_{jk}
+                if self.index == op.eigenspace_index:
+                    return 1.0
+                else:
+                    return 0.0
+            # Different operator - fall through to general case
+        
+        # Normalize operator first
+        op_norm = self.algebra.normalize(op)
+        op_expr = op_norm._expr
+        obs_expr = self.observable._expr
+        
+        # Case 1: Pure scalar
+        if isinstance(op_expr, SympyNumber) or op_expr.is_number:
+            return complex(op_expr)
+        
+        # Case 2: Identity
+        if str(op_expr) == 'I':
+            return 1.0
+        
+        # Case 3: The observable itself
+        if op_expr == obs_expr:
+            return self.eigenvalue
+        
+        # Case 4: Power of observable
+        if isinstance(op_expr, Pow) and op_expr.base == obs_expr:
+            return self.eigenvalue ** op_expr.exp
+        
+        # Case 5: Sum (linearity)
+        if isinstance(op_expr, Add):
+            total = 0.0
+            for term in op_expr.args:
+                term_op = YawOperator(term, self.algebra)
+                total += self.expect(term_op, _depth=_depth+1)
+            return total
+        
+        # Case 6: Product with coefficient
+        if isinstance(op_expr, Mul):
+            coeff = 1.0
+            operator_parts = []
+            
+            for arg in op_expr.args:
+                if isinstance(arg, SympyNumber) or arg.is_number:
+                    coeff *= complex(arg)
+                else:
+                    operator_parts.append(arg)
+            
+            if not operator_parts:
+                return coeff
+            
+            if len(operator_parts) == 1:
+                op_part = YawOperator(operator_parts[0], self.algebra)
+                return coeff * self.expect(op_part, _depth=_depth+1)
+            
+            # Multiple operators - check if equal to observable
+            product_expr = Mul(*operator_parts)
+            if product_expr == obs_expr:
+                return coeff * self.eigenvalue
+            
+            # Otherwise off-diagonal
+            return 0.0
+        
+        # Case 7: Other operators (off-diagonal)
+        return 0.0
+    
+    def __str__(self):
+        return f"char({self.observable}, {self.index})"
+
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+    
+class TensorState(State):
+    """Tensor product of states: |ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©"""
+    
+    def __init__(self, states):
+        self.states = list(states)
+        
+        if not self.states:
+            raise ValueError("TensorState requires at least one state")
+        
+        # Flatten nested TensorStates
+        flattened = []
+        for s in self.states:
+            if isinstance(s, TensorState):
+                flattened.extend(s.states)
+            else:
+                flattened.append(s)
+        self.states = flattened
+    
+    def expect(self, operator, _depth=0):
+        """Compute expectation value on tensor product state."""
+        if _depth > 10:
+            return 0.0
+        
+        # Handle tensor product operators
+        if isinstance(operator, TensorProduct):
+            if len(operator.factors) != len(self.states):
+                raise ValueError(
+                    f"Operator has {len(operator.factors)} factors "
+                    f"but state has {len(self.states)} factors"
+                )
+            
+            # Compute product of individual expectations
+            result = 1
+            for op, state in zip(operator.factors, self.states):
+                result *= state.expect(op, _depth=_depth+1)
+            
+            return result
+        
+        # Single operator - assume it acts on first subsystem
+        elif isinstance(operator, YawOperator):
+            if len(self.states) == 1:
+                return self.states[0].expect(operator, _depth=_depth+1)
+            else:
+                # Trace out other subsystems (partial trace)
+                # For now, just apply to first subsystem
+                return self.states[0].expect(operator, _depth=_depth+1)
+        
+        # Scalar
+        return operator
+    
+    def __matmul__(self, other):
+        """Extend tensor product of states"""
+        if isinstance(other, State):
+            if isinstance(other, TensorState):
+                return TensorState(self.states + other.states)
+            else:
+                return TensorState(self.states + [other])
+        else:
+            raise TypeError(f"Cannot tensor TensorState with {type(other)}")
+    
+    def __str__(self):
+        """Display as tensor product."""
+        state_strs = [str(s) for s in self.states]
+        return " Ã¢Å â€” ".join(state_strs)
+    
+    def __repr__(self):
+        """Display representation."""
+        return f"TensorState({', '.join(str(s) for s in self.states)})"
+    
+class ConjugatedState(State):
+    """State transformed by unitary: U << |ÃË†Ã¢Å¸Â©.
+    
+    Implements the Heisenberg picture: instead of transforming the state,
+    transform the operators measured against it.
+    
+    Property: (U << ÃË†)(A) = ÃË†(UÃ¢â‚¬Â  A U)
+    
+    Attributes:
+        unitary: Transformation operator
+        state: Original state
+        algebra: Inherited algebra
+    """
+    
+    def __init__(self, unitary, state):
+        """Create conjugated state.
+        
+        Args:
+            unitary: Operator to transform by
+            state: Original state
+        """
+        self.unitary = unitary
+        self.state = state
+        self.algebra = unitary.algebra
+    
+    def expect(self, op, _depth=0):
+        """Compute expectation: Ã¢Å¸Â¨U|ÃË†Ã¢Å¸Â©|A|U|ÃË†Ã¢Å¸Â©Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|UÃ¢â‚¬Â AU|ÃË†Ã¢Å¸Â©"""
+        if _depth > 10:
+            return 0.0
+        
+        # Transform operator instead of state
+        transformed_op = self.unitary.conj_op(op)
+        transformed_op_norm = transformed_op.normalize()
+        
+        # Measure in original state
+        return self.state.expect(transformed_op_norm, _depth=_depth+1)
+    
+    def __str__(self):
+        return f"({self.unitary} << {self.state})"
+
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+
+class MixedState(State):
+    """Mixed state (classical probability distribution over pure states).
+    """
+    
+    def __init__(self, components):
+        """
+        Args:
+            components: List of (probability, state) tuples
+                       e.g., [(0.2, psi0), (0.8, psi1)]
+        """
+        # Validate probabilities sum to 1
+        total = sum(p for p, _ in components)
+        if not abs(total - 1.0) < 1e-10:
+            raise ValueError(f"Probabilities must sum to 1, got {total}")
+        
+        self.components = components
+    
+    def __call__(self, operator):
+        """Expectation value: Tr(Ã A) = Ã¢Ë†'_i p_i Ã¢Å¸Â¨psi_i|A|psi_iÃ¢Å¸Â©"""
+        return sum(prob * state(operator) 
+                   for prob, state in self.components)
+    
+    def __add__(self, other):
+        """Add mixed states (renormalize)."""
+        if isinstance(other, MixedState):
+            # Combine component lists
+            all_components = self.components + other.components
+            # Renormalize
+            total = sum(p for p, _ in all_components)
+            normalized = [(p/total, s) for p, s in all_components]
+            return MixedState(normalized)
+        elif isinstance(other, State):
+            # Treat pure state as mixed state with p=1
+            return self + MixedState([(1.0, other)])
+        else:
+            raise TypeError(f"Cannot add MixedState and {type(other)}")
+    
+    def __rmul__(self, scalar):
+        """Scalar multiplication (for weighted combinations)."""
+        # Note: This breaks normalization!
+        # Need to handle carefully or prohibit
+        scaled = [(scalar * p, s) for p, s in self.components]
+        return MixedState(scaled)
+    
+# ============================================================================
+# QUANTUM CHANNELS
+# ============================================================================
+
+class OpChannel:
+    """Quantum channel as a completely positive map on operators.
+    
+    Given Kraus operators {K_i}, implements the superoperator:
+        E(A) = Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â 
+    
+    Channels are:
+    - Linear: E(ÃŽÂ±A + ÃŽÂ²B) = ÃŽÂ±E(A) + ÃŽÂ²E(B)
+    - Completely positive (CP)
+    - Trace preserving (if Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢ = I)
+    - Unital (if Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢KÃ¡ÂµÂ¢Ã¢â‚¬Â  = I)
+    
+    Attributes:
+        kraus_ops: List of Kraus operators
+    """
+    
+    def __init__(self, kraus_ops):
+        """Create channel from Kraus operators.
+        
+        Args:
+            kraus_ops: List of YawOperator instances (Kraus operators)
+        """
+        self.kraus_ops = list(kraus_ops)
+        
+        if not self.kraus_ops:
+            raise ValueError("Channel must have at least one Kraus operator")
+    
+    def __call__(self, operator):
+        """Apply channel to operator: E(A) = Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â 
+        
+        Args:
+            operator: YawOperator to transform
+            
+        Returns:
+            Transformed operator
+        """
+        result = None
+        
+        for K in self.kraus_ops:
+            # Apply Kraus operator: KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â 
+            term = K.conj_op(operator)  # K >> A
+            
+            if result is None:
+                result = term
+            else:
+                result = result + term
+        
+        return result
+
+    def __ror__(self, operator):
+        """Enable operator | channel syntax (Unix pipe style).
+        
+        Allows composition: op | channel1 | channel2 | channel3
+        
+        Args:
+            operator: YawOperator to transform
+            
+        Returns:
+            Transformed operator
+            
+        Example:
+            >>> noise = opChannel([K0, K1])
+            >>> X | noise  # Apply noise channel to X
+            >>> X | noise | another_channel  # Compose channels
+        """
+        return self(operator)
+    
+    def __mul__(self, other):
+        """Compose channels: (EÃ¢â€šÂ Ã¢Ë†Ëœ EÃ¢â€šâ€š)(A) = EÃ¢â€šÂ(EÃ¢â€šâ€š(A))
+        
+        Args:
+            other: Another OpChannel
+            
+        Returns:
+            Composed channel
+        """
+        if isinstance(other, OpChannel):
+            return ComposedChannel(self, other)
+        raise TypeError(f"Cannot compose OpChannel with {type(other)}")
+    
+    def is_trace_preserving(self):
+        """Check if channel is trace preserving: Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢ = I
+        
+        Returns:
+            YawOperator (should normalize to I if TP)
+        """
+        result = None
+        for K in self.kraus_ops:
+            term = K.adjoint() * K
+            if result is None:
+                result = term
+            else:
+                result = result + term
+        return result
+    
+    def is_unital(self):
+        """Check if channel is unital: Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢KÃ¡ÂµÂ¢Ã¢â‚¬Â  = I
+        
+        Returns:
+            YawOperator (should normalize to I if unital)
+        """
+        result = None
+        for K in self.kraus_ops:
+            term = K * K.adjoint()
+            if result is None:
+                result = term
+            else:
+                result = result + term
+        return result
+    
+    def __str__(self):
+        return f"OpChannel({len(self.kraus_ops)} Kraus ops)"
+    
+    def __repr__(self):
+        return f"OpChannel(kraus_ops={self.kraus_ops})"
+
+class ComposedChannel(OpChannel):
+    """Composition of two channels: (EÃ¢â€šÂ Ã¢Ë†Ëœ EÃ¢â€šâ€š)(A) = EÃ¢â€šÂ(EÃ¢â€šâ€š(A))"""
+    
+    def __init__(self, first, second):
+        """Compose two channels.
+        
+        Args:
+            first: Applied second (outer)
+            second: Applied first (inner)
+        """
+        self.first = first
+        self.second = second
+        # Don't store kraus_ops directly (would require computing composition)
+        self._kraus_ops = None
+    
+    @property
+    def kraus_ops(self):
+        """Lazy computation of composed Kraus operators."""
+        if self._kraus_ops is None:
+            # EÃ¢â€šÂÃ¢Ë†ËœEÃ¢â€šâ€š has Kraus ops {KÃ¡ÂµÂ¢Ã¢ÂÂ½Ã‚Â¹Ã¢ÂÂ¾KÃ¢Â±Â¼Ã¢ÂÂ½Ã‚Â²Ã¢ÂÂ¾}
+            composed = []
+            for K1 in self.first.kraus_ops:
+                for K2 in self.second.kraus_ops:
+                    composed.append(K1 * K2)
+            self._kraus_ops = composed
+        return self._kraus_ops
+    
+    def __call__(self, operator):
+        """Apply composed channel."""
+        return self.first(self.second(operator))
+    
+    def __str__(self):
+        return f"({self.first} Ã¢Ë†Ëœ {self.second})"
+
+def opChannel(kraus_ops):
+    """Create operator channel from Kraus operators.
+    
+    Convenience constructor for OpChannel.
+    
+    Args:
+        kraus_ops: List of Kraus operators
+        
+    Returns:
+        OpChannel instance
+        
+    Example:
+        >>> K0 = (I + Z) / 2
+        >>> K1 = (I - Z) / 2
+        >>> channel = opChannel([K0, K1])
+        >>> channel(X)  # Dephasing channel applied to X
+    """
+    return OpChannel(kraus_ops)
+
+class StChannel:
+    """Quantum channel acting on states (dual to OpChannel).
+    
+    Given Kraus operators {K_i}, transforms states via:
+        E*(|ÃË†Ã¢Å¸Â©)(A) = Ã¢Å¸Â¨ÃË†|E(A)|ÃË†Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â |ÃË†Ã¢Å¸Â©
+    
+    This is the SchrÃƒÂ¶dinger picture: states evolve, operators fixed.
+    Dual to OpChannel (Heisenberg picture).
+    
+    Attributes:
+        kraus_ops: List of Kraus operators
+        op_channel: Corresponding operator channel
+    """
+    
+    def __init__(self, kraus_ops):
+        """Create state channel from Kraus operators.
+        
+        Args:
+            kraus_ops: List of YawOperator instances (Kraus operators)
+        """
+        self.kraus_ops = list(kraus_ops)
+        
+        if not self.kraus_ops:
+            raise ValueError("Channel must have at least one Kraus operator")
+        
+        # Store dual operator channel for convenience
+        self.op_channel = OpChannel(kraus_ops)
+    
+    def __call__(self, state):
+        """Apply channel to state: E*(|ÃË†Ã¢Å¸Â©)
+        
+        Args:
+            state: State to transform
+            
+        Returns:
+            TransformedState instance
+        """
+        return TransformedState(self, state)
+
+    def __ror__(self, state):
+        """Enable state | channel syntax (Unix pipe style).
+        
+        Allows composition: psi | channel1 | channel2 | channel3
+        
+        Args:
+            state: State to transform
+            
+        Returns:
+            Transformed state
+            
+        Example:
+            >>> noise = stChannel([K0, K1])
+            >>> psi0 | noise  # Apply noise to state
+            >>> psi0 | noise | decay  # Compose channels
+        """
+        return self(state)
+    
+    def __mul__(self, other):
+        """Compose state channels: (EÃ¢â€šÂ Ã¢Ë†Ëœ EÃ¢â€šâ€š)*(|ÃË†Ã¢Å¸Â©) = EÃ¢â€šÂ*(EÃ¢â€šâ€š*(|ÃË†Ã¢Å¸Â©))
+        
+        Args:
+            other: Another StChannel
+            
+        Returns:
+            Composed state channel
+        """
+        if isinstance(other, StChannel):
+            return ComposedStChannel(self, other)
+        raise TypeError(f"Cannot compose StChannel with {type(other)}")
+    
+    def __str__(self):
+        return f"StChannel({len(self.kraus_ops)} Kraus ops)"
+    
+    def __repr__(self):
+        return f"StChannel(kraus_ops={self.kraus_ops})"
+
+class TransformedState(State):
+    """State transformed by a quantum channel.
+    
+    Implements: E*(|ÃË†Ã¢Å¸Â©)(A) = Ã¢Å¸Â¨ÃË†|E(A)|ÃË†Ã¢Å¸Â©
+    
+    This is the key duality: to measure A on the transformed state
+    is the same as measuring E(A) on the original state.
+    
+    Attributes:
+        channel: StChannel that transformed the state
+        state: Original state
+    """
+    
+    def __init__(self, channel, state):
+        """Create transformed state.
+        
+        Args:
+            channel: StChannel to apply
+            state: Original state
+        """
+        self.channel = channel
+        self.state = state
+    
+    def expect(self, operator, _depth=0):
+        """Compute expectation: Ã¢Å¸Â¨E*(ÃË†)|A|E*(ÃË†)Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|E(A)|ÃË†Ã¢Å¸Â©
+        
+        Args:
+            operator: Operator to measure
+            _depth: Recursion depth counter
+            
+        Returns:
+            Expectation value
+        """
+        if _depth > 10:
+            return 0.0
+        
+        # Apply channel to operator
+        transformed_op = self.channel.op_channel(operator)
+        
+        # Normalize
+        if hasattr(transformed_op, 'normalize'):
+            transformed_op = transformed_op.normalize()
+        
+        # Measure on original state
+        return self.state.expect(transformed_op, _depth=_depth+1)
+    
+    def __str__(self):
+        return f"{self.channel}({self.state})"
+    
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+
+class ComposedStChannel(StChannel):
+    """Composition of two state channels."""
+    
+    def __init__(self, first, second):
+        """Compose two state channels.
+        
+        Args:
+            first: Applied second (outer)
+            second: Applied first (inner)
+        """
+        self.first = first
+        self.second = second
+        # Kraus ops are composition of individual Kraus ops
+        self._kraus_ops = None
+        self._op_channel = None
+    
+    @property
+    def kraus_ops(self):
+        """Lazy computation of composed Kraus operators."""
+        if self._kraus_ops is None:
+            composed = []
+            for K1 in self.first.kraus_ops:
+                for K2 in self.second.kraus_ops:
+                    composed.append(K1 * K2)
+            self._kraus_ops = composed
+        return self._kraus_ops
+    
+    @property
+    def op_channel(self):
+        """Lazy computation of dual operator channel."""
+        if self._op_channel is None:
+            self._op_channel = OpChannel(self.kraus_ops)
+        return self._op_channel
+    
+    def __call__(self, state):
+        """Apply composed channel."""
+        return TransformedState(self, state)
+    
+    def __str__(self):
+        return f"({self.first} Ã¢Ë†Ëœ {self.second})"
+
+def stChannel(kraus_ops):
+    """Create state channel from Kraus operators.
+    
+    Convenience constructor for StChannel.
+    
+    Args:
+        kraus_ops: List of Kraus operators
+        
+    Returns:
+        StChannel instance
+        
+    Example:
+        >>> K0 = (I + Z) / 2
+        >>> K1 = (I - Z) / 2
+        >>> channel = stChannel([K0, K1])
+        >>> psi0 = char(Z, 0)
+        >>> channel(psi0)  # Dephasing channel applied to |0Ã¢Å¸Â©
+    """
+    return StChannel(kraus_ops)
+
+# ============================================================================
+# MEASUREMENT (STOCHASTIC UPDATE)
+# ============================================================================
+
+class CollapsedState(State):
+    """State after measurement collapse: K|ÃË†Ã¢Å¸Â©/Ã¢Ë†Å¡p normalized as functional.
+    
+    For density matrix semantics: ÃÂ' = (KÃÂKÃ¢â‚¬Â )/p where p = Tr(KÃÂKÃ¢â‚¬Â )
+    
+    Since states are functionals:
+        ÃË†'(A) = ÃË†(KÃ¢â‚¬Â AK) / p
+    
+    Attributes:
+        kraus_op: Kraus operator that collapsed the state
+        state: Original state before measurement
+        probability: Probability p of this outcome
+    """
+    
+    def __init__(self, kraus_op, state, probability):
+        """Create collapsed state.
+        
+        Args:
+            kraus_op: Kraus operator K
+            state: Original state |ÃË†Ã¢Å¸Â©
+            probability: p = Ã¢Å¸Â¨ÃË†|KÃ¢â‚¬Â K|ÃË†Ã¢Å¸Â©
+        """
+        self.kraus_op = kraus_op
+        self.state = state
+        self.probability = probability
+        
+        # if probability < 1e-10:
+        #    raise ValueError("Cannot collapse with zero probability")
+    
+    def expect(self, operator, _depth=0):
+        """Compute expectation: Ã¢Å¸Â¨ÃË†'|A|ÃË†'Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|KÃ¢â‚¬Â AK|ÃË†Ã¢Å¸Â© / p
+        
+        Args:
+            operator: Operator to measure
+            _depth: Recursion depth counter
+            
+        Returns:
+            Expectation value
+        """
+        if _depth > 10:
+            return 0.0
+
+        # Handle zero probability
+        if self.probability < 1e-10:
+            return 0.0  # Convention: zero-probability branch has zero expectation
+        
+        # Transform operator: KÃ¢â‚¬Â  A K
+        transformed = self.kraus_op.conj_op(operator)
+        
+        # Normalize
+        if hasattr(transformed, 'normalize'):
+            transformed = transformed.normalize()
+        
+        # Measure on original state and normalize by probability
+        return self.state.expect(transformed, _depth=_depth+1) / self.probability
+    
+    def __str__(self):
+        return f"Collapsed[{self.kraus_op}, p={self.probability:.3f}]({self.state})"
+    
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+
+class OpMeasurement:
+    """Measurement device for operators (Heisenberg picture).
+    
+    Encapsulates a measurement with Kraus operators and state.
+    Each call samples a random outcome according to Born rule.
+    
+    Usage:
+        >>> measure = opMeasure([K0, K1], state, seed=42)
+        >>> updated_op, prob = measure(A)
+        # Returns (KÃ¡ÂµÂ¢ >> A, p(i)) for random outcome i
+    
+    Attributes:
+        kraus_ops: List of Kraus operators
+        state: State being measured
+        seed: Random seed for reproducibility
+    """
+    
+    def __init__(self, kraus_ops, state, seed=None):
+        """Create measurement device.
+        
+        Args:
+            kraus_ops: List of Kraus operators
+            state: State to measure
+            seed: Optional random seed
+        """
+        self.kraus_ops = list(kraus_ops)
+        self.state = state
+        self.seed = seed
+        
+        if not self.kraus_ops:
+            raise ValueError("Must provide at least one Kraus operator")
+    
+    def __call__(self, operator):
+        """Sample measurement outcome and return transformed operator.
+        
+        Samples outcome i with probability p(i) = Ã¢Å¸Â¨ÃË†|KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢|ÃË†Ã¢Å¸Â©
+        
+        Args:
+            operator: Operator to transform
+            
+        Returns:
+            (KÃ¡ÂµÂ¢ >> operator, p(i))
+        """
+        # Compute probabilities
+        probs = []
+        for K in self.kraus_ops:
+            prob = self.state.expect(K.adjoint() * K)
+            # Convert to float, handling complex numbers
+            prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
+            probs.append(max(0.0, prob_float))  # Ensure non-negative
+        
+        # For trace-preserving channels, probabilities sum to 1
+        # But check for numerical issues
+        total = sum(probs)
+        if total < 1e-10:
+            raise ValueError("All measurement outcomes have zero probability")
+        
+        # Sample outcome
+        if self.seed is not None:
+            random.seed(self.seed)
+        i = random.choices(range(len(self.kraus_ops)), weights=probs)[0]
+        
+        # Apply Kraus operator: KÃ¡ÂµÂ¢ >> A = KÃ¡ÂµÂ¢Ã¢â‚¬Â  A KÃ¡ÂµÂ¢
+        K_i = self.kraus_ops[i]
+        transformed = K_i.conj_op(operator)
+        
+        return (transformed, probs[i])
+    
+    def __str__(self):
+        return f"OpMeasurement({len(self.kraus_ops)} outcomes)"
+    
+    def __repr__(self):
+        return f"OpMeasurement(kraus_ops={len(self.kraus_ops)}, seed={self.seed})"
+
+class StMeasurement:
+    """Measurement device for states (SchrÃƒÂ¶dinger picture).
+    
+    Encapsulates a measurement with Kraus operators and state.
+    Each call samples a random outcome according to Born rule.
+    
+    Usage:
+        >>> measure = stMeasure([K0, K1], state, seed=42)
+        >>> collapsed_state, prob = measure()
+        # Returns (KÃ¡ÂµÂ¢ << state / p(i), p(i)) for random outcome i
+    
+    Attributes:
+        kraus_ops: List of Kraus operators
+        state: State being measured
+        seed: Random seed for reproducibility
+    """
+    
+    def __init__(self, kraus_ops, state, seed=None):
+        """Create measurement device.
+        
+        Args:
+            kraus_ops: List of Kraus operators
+            state: State to measure
+            seed: Optional random seed
+        """
+        self.kraus_ops = list(kraus_ops)
+        self.state = state
+        self.seed = seed
+        
+        if not self.kraus_ops:
+            raise ValueError("Must provide at least one Kraus operator")
+    
+    def __call__(self):
+        """Sample measurement outcome and return collapsed state.
+        
+        Samples outcome i with probability p(i) = Ã¢Å¸Â¨ÃË†|KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢|ÃË†Ã¢Å¸Â©
+        Returns collapsed state: ÃË†'(A) = ÃË†(KÃ¡ÂµÂ¢Ã¢â‚¬Â AKÃ¡ÂµÂ¢) / p(i)
+        
+        Returns:
+            (collapsed_state, p(i))
+        """
+        # Compute probabilities
+        probs = []
+        for K in self.kraus_ops:
+            prob = self.state.expect(K.adjoint() * K)
+            # Convert to float, handling complex numbers
+            prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
+            probs.append(max(0.0, prob_float))  # Ensure non-negative
+        
+        # For trace-preserving channels, probabilities sum to 1
+        # But check for numerical issues
+        total = sum(probs)
+        if total < 1e-10:
+            raise ValueError("All measurement outcomes have zero probability")
+        
+        # Sample outcome
+        if self.seed is not None:
+            random.seed(self.seed)
+        i = random.choices(range(len(self.kraus_ops)), weights=probs)[0]
+        
+        # Collapse state: KÃ¡ÂµÂ¢ << state, normalized by p(i)
+        K_i = self.kraus_ops[i]
+        collapsed = CollapsedState(K_i, self.state, probs[i])
+        
+        return (collapsed, probs[i])
+    
+    def __str__(self):
+        return f"StMeasurement({len(self.kraus_ops)} outcomes)"
+    
+    def __repr__(self):
+        return f"StMeasurement(kraus_ops={len(self.kraus_ops)}, seed={self.seed})"
+
+def opMeasure(kraus_ops, state, seed=None):
+    """Create operator measurement device.
+    
+    Args:
+        kraus_ops: List of Kraus operators
+        state: State to measure
+        seed: Random seed for reproducibility (optional)
+        
+    Returns:
+        OpMeasurement object (callable on operators)
+        
+    Example:
+        >>> K0 = (I + Z) / 2  # Project to |0Ã¢Å¸Â©
+        >>> K1 = (I - Z) / 2  # Project to |1Ã¢Å¸Â©
+        >>> measure = opMeasure([K0, K1], psi0, seed=42)
+        >>> updated_X, prob = measure(X)
+    """
+    return OpMeasurement(kraus_ops, state, seed)
+
+def stMeasure(kraus_ops, state, seed=None):
+    """Create state measurement device.
+    
+    Args:
+        kraus_ops: List of Kraus operators
+        state: State to measure
+        seed: Random seed for reproducibility (optional)
+        
+    Returns:
+        StMeasurement object (callable, returns collapsed state)
+        
+    Example:
+        >>> K0 = (I + Z) / 2  # Project to |0Ã¢Å¸Â©
+        >>> K1 = (I - Z) / 2  # Project to |1Ã¢Å¸Â©
+        >>> measure = stMeasure([K0, K1], psi0, seed=42)
+        >>> collapsed_state, prob = measure()
+    """
+    return StMeasurement(kraus_ops, state, seed)
+
+# ============================================================================
+# MEASUREMENT BRANCHES (ENSEMBLE SEMANTICS)
+# ============================================================================
+
+class OpBranches:
+    """All measurement branches in operator picture (Heisenberg).
+    
+    Returns complete list of all possible measurement outcomes with
+    their probabilities. No sampling - shows full ensemble.
+    
+    Usage:
+        >>> branches = opBranches([K0, K1], state)
+        >>> outcomes = branches(A)
+        # Returns [(KÃ¢â€šâ‚¬ >> A, p(0)), (KÃ¢â€šÂ >> A, p(1))]
+    
+    Attributes:
+        kraus_ops: List of Kraus operators
+        state: State being measured
+    """
+    
+    def __init__(self, kraus_ops, state):
+        """Create branching measurement.
+        
+        Args:
+            kraus_ops: List of Kraus operators
+            state: State to measure
+        """
+        self.kraus_ops = list(kraus_ops)
+        self.state = state
+        
+        if not self.kraus_ops:
+            raise ValueError("Must provide at least one Kraus operator")
+    
+    def __call__(self, operator):
+        """Return all measurement branches.
+        
+        Args:
+            operator: Operator to transform
+            
+        Returns:
+            List of (transformed_operator, probability) tuples
+        """
+        branches = []
+        
+        for K in self.kraus_ops:
+            prob = self.state.expect(K.adjoint() * K)
+            prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
+            prob_float = max(0.0, prob_float)  # Ensure non-negative
+            
+            # Apply Kraus operator: K >> A
+            transformed = K.conj_op(operator)
+            
+            branches.append((transformed, prob_float))
+        
+        return branches
+    
+    def __str__(self):
+        return f"OpBranches({len(self.kraus_ops)} branches)"
+    
+    def __repr__(self):
+        return f"OpBranches(kraus_ops={len(self.kraus_ops)})"
+
+class StBranches:
+    """All measurement branches in state picture (SchrÃƒÂ¶dinger).
+    
+    Returns complete list of all possible measurement outcomes with
+    their probabilities. No sampling - shows full ensemble.
+    
+    Usage:
+        >>> branches = stBranches([K0, K1], state)
+        >>> outcomes = branches()
+        # Returns [(KÃ¢â€šâ‚¬ << state / p(0), p(0)), (KÃ¢â€šÂ << state / p(1), p(1))]
+    
+    Attributes:
+        kraus_ops: List of Kraus operators
+        state: State being measured
+    """
+    
+    def __init__(self, kraus_ops, state):
+        """Create branching measurement.
+        
+        Args:
+            kraus_ops: List of Kraus operators
+            state: State to measure
+        """
+        self.kraus_ops = list(kraus_ops)
+        self.state = state
+        
+        if not self.kraus_ops:
+            raise ValueError("Must provide at least one Kraus operator")
+    
+    def __call__(self):
+        """Return all measurement branches.
+        
+        Returns:
+            List of (collapsed_state, probability) tuples
+        """
+        branches = []
+        
+        for K in self.kraus_ops:
+            prob = self.state.expect(K.adjoint() * K)
+            prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
+            prob_float = max(0.0, prob_float)  # Ensure non-negative
+            
+            # Include zero prob branches for full ensemble view
+            try:
+                collapsed = CollapsedState(K, self.state, prob_float)
+                branches.append((collapsed, prob_float))
+            except ValueError:
+                # Zero probability - include marker
+                branches.append((None, prob_float))
+        
+        return branches
+    
+    def __str__(self):
+        return f"StBranches({len(self.kraus_ops)} branches)"
+    
+    def __repr__(self):
+        return f"StBranches(kraus_ops={len(self.kraus_ops)})"
+
+def opBranches(kraus_ops, state):
+    """Create operator branching measurement.
+    
+    Returns all possible measurement outcomes (full ensemble).
+    
+    Args:
+        kraus_ops: List of Kraus operators
+        state: State to measure
+        
+    Returns:
+        OpBranches object (callable on operators)
+        
+    Example:
+        >>> K0 = (I + Z) / 2
+        >>> K1 = (I - Z) / 2
+        >>> branches = opBranches([K0, K1], psi0)
+        >>> outcomes = branches(X)
+        # Returns [(KÃ¢â€šâ‚¬ >> X, 1.0), (KÃ¢â€šÂ >> X, 0.0)]
+    """
+    return OpBranches(kraus_ops, state)
+
+def stBranches(kraus_ops, state):
+    """Create state branching measurement.
+    
+    Returns all possible measurement outcomes (full ensemble).
+    
+    Args:
+        kraus_ops: List of Kraus operators
+        state: State to measure
+        
+    Returns:
+        StBranches object (callable, returns list of branches)
+        
+    Example:
+        >>> K0 = (I + Z) / 2
+        >>> K1 = (I - Z) / 2
+        >>> branches = stBranches([K0, K1], psi0)
+        >>> outcomes = branches()
+        # Returns [(collapsedÃ¢â€šâ‚¬, 1.0), (collapsedÃ¢â€šÂ, 0.0)]
+    """
+    return StBranches(kraus_ops, state)
+
+def compose_st_branches(new_kraus_ops, branch_list):
+    """Compose measurements: apply new measurement to each branch.
+    
+    Branches grow exponentially: n branches Ãƒâ€” m outcomes = n*m branches.
+    
+    Args:
+        new_kraus_ops: List of Kraus operators for second measurement
+        branch_list: List of (state, prob) from previous measurement
+        
+    Returns:
+        Combined list of (state, prob) for all paths
+        
+    Example:
+        >>> # First measurement
+        >>> branches1 = stBranches([K0, K1], psi0)()
+        >>> # Second measurement on all branches
+        >>> branches2 = compose_st_branches([L0, L1], branches1)
+        # Now have 2*2 = 4 branches (all measurement histories)
+    """
+    all_branches = []
+    
+    for state, prob in branch_list:
+        # Measure each branch
+        measure = stBranches(new_kraus_ops, state)
+        sub_branches = measure()
+        
+        # Accumulate with probability multiplication
+        for sub_state, sub_prob in sub_branches:
+            all_branches.append((sub_state, prob * sub_prob))
+    
+    return all_branches
+
+def compose_op_branches(new_kraus_ops, state, branch_list):
+    """Compose operator measurements (requires state for probabilities).
+    
+    Args:
+        new_kraus_ops: List of Kraus operators for second measurement
+        state: State (needed to compute probabilities)
+        branch_list: List of (operator, prob) from previous measurement
+        
+    Returns:
+        Combined list of (operator, prob) for all paths
+    """
+    # For operator branches, we need to track how operators evolve
+    # This is more complex - may want to return list of (op, state_branch, prob)
+    # For now, simpler to just use stBranches and track states
+    raise NotImplementedError("Use compose_st_branches for sequential measurements")
+
+# ============================================================================
+# QUANTUM FOURIER TRANSFORM
+# ============================================================================
+
+class QFT:
+    """Quantum Fourier Transform as algebraic automorphism.
+    
+    The QFT is defined purely algebraically by its action on generators:
+        qft(X, Z) >> Z = X
+        qft(X, Z) >> X = ZÃ¢â‚¬Â 
+    
+    This extends to arbitrary operators by the automorphism property:
+        qft >> (AB) = (qft >> A)(qft >> B)
+    
+    For qudits with pow(d), we use ZÃ¢â‚¬Â  = Z^(d-1).
+    
+    Attributes:
+        gen_x: X generator (shift operator)
+        gen_z: Z generator (clock operator)
+        algebra: Algebra containing X and Z
+    
+    Example:
+        >>> X, Z = algebra.X, algebra.Z
+        >>> W = qft(X, Z)
+        >>> (W >> Z).normalize()  # Returns X
+        >>> (W >> X).normalize()  # Returns Z^(d-1)
+    """
+    
+    def __init__(self, gen_x, gen_z, algebra=None):
+        """Create QFT operator.
+        
+        Args:
+            gen_x: X generator
+            gen_z: Z generator
+            algebra: Optional algebra (inferred from operators if None)
+        """
+        self.gen_x = gen_x
+        self.gen_z = gen_z
+        
+        # Infer algebra
+        if algebra is None:
+            if hasattr(gen_x, 'algebra') and gen_x.algebra is not None:
+                algebra = gen_x.algebra
+            elif hasattr(gen_z, 'algebra') and gen_z.algebra is not None:
+                algebra = gen_z.algebra
+        
+        self.algebra = algebra
+        
+        # Get SymPy representations
+        self.x_expr = gen_x._expr
+        self.z_expr = gen_z._expr
+        
+        # Compute ZÃ¢â‚¬Â  (conjugate of Z)
+        if algebra and algebra.power_mod:
+            # For pow(d): ZÃ¢â‚¬Â  = Z^(d-1)
+            d = algebra.power_mod
+            self.z_dag_expr = self.z_expr ** (d - 1)
+        else:
+            # Generic: ZÃ¢â‚¬Â 
+            self.z_dag_expr = Dagger(self.z_expr)
+        
+        # Similarly for XÃ¢â‚¬Â 
+        if algebra and algebra.power_mod:
+            d = algebra.power_mod
+            self.x_dag_expr = self.x_expr ** (d - 1)
+        else:
+            self.x_dag_expr = Dagger(self.x_expr)
+    
+    def conj_op(self, operator):
+        """Apply QFT via conjugation: W >> A = W A WÃ¢â‚¬Â 
+        
+        Uses the defining relations:
+            W >> Z = X
+            W >> X = ZÃ¢â‚¬Â 
+        
+        Args:
+            operator: Operator to transform
+            
+        Returns:
+            Transformed operator
+        """
+        if isinstance(operator, YawOperator):
+            transformed_expr = self._transform_expr(operator._expr)
+            result = YawOperator(transformed_expr, self.algebra)
+            
+            # Normalize if we have an algebra
+            if self.algebra:
+                return result.normalize()
+            return result
+        else:
+            # Scalar
+            return operator
+    
+    def _transform_expr(self, expr):
+        """Recursively transform expression using QFT rules.
+        
+        Transformation rules:
+            Z Ã¢â€ â€™ X
+            X Ã¢â€ â€™ ZÃ¢â‚¬Â 
+            I Ã¢â€ â€™ I
+            AB Ã¢â€ â€™ (W >> A)(W >> B)  (automorphism)
+            A + B Ã¢â€ â€™ (W >> A) + (W >> B)  (linearity)
+        """
+        from sympy import symbols, Mul, Add, Pow
+        
+        # Base cases
+        if expr == self.z_expr:
+            return self.x_expr
+        
+        if expr == self.x_expr:
+            return self.z_dag_expr
+        
+        # Daggers
+        if isinstance(expr, Dagger):
+            if expr.args[0] == self.z_expr:
+                # ZÃ¢â‚¬Â  Ã¢â€ â€™ XÃ¢â‚¬Â 
+                return self.x_dag_expr
+            if expr.args[0] == self.x_expr:
+                # XÃ¢â‚¬Â  Ã¢â€ â€™ Z
+                return self.z_expr
+        
+        # Identity
+        if self.algebra and expr == self.algebra.I._expr:
+            return expr
+        
+        # Powers: X^n Ã¢â€ â€™ (ZÃ¢â‚¬Â )^n, Z^n Ã¢â€ â€™ X^n
+        if isinstance(expr, Pow):
+            base = expr.args[0]
+            exp = expr.args[1]
+            
+            if base == self.x_expr:
+                return self.z_dag_expr ** exp
+            if base == self.z_expr:
+                return self.x_expr ** exp
+            
+            # Recurse on base
+            return self._transform_expr(base) ** exp
+        
+        # Products: use automorphism
+        if isinstance(expr, Mul):
+            transformed_args = [self._transform_expr(arg) for arg in expr.args]
+            return Mul(*transformed_args)
+        
+        # Sums: use linearity
+        if isinstance(expr, Add):
+            transformed_args = [self._transform_expr(arg) for arg in expr.args]
+            return Add(*transformed_args)
+        
+        # Scalars and unknown expressions: pass through
+        return expr
+    
+    def __rshift__(self, operator):
+        """Enable W >> A syntax."""
+        return self.conj_op(operator)
+    
+    def adjoint(self):
+        """QFT is self-adjoint (up to phase): WÃ¢â‚¬Â  = W^(d-1)
+        
+        For qubits (d=2): WÃ¢â‚¬Â  = W
+        For general qudits: W^d = I, so WÃ¢â‚¬Â  = W^(d-1)
+        """
+        if self.algebra and self.algebra.power_mod:
+            d = self.algebra.power_mod
+            if d == 2:
+                return self  # Self-adjoint for qubits
+            else:
+                # Would need to implement QFT^n
+                raise NotImplementedError("QFT^(d-1) for d>2 not yet implemented")
+        return self  # Assume self-adjoint
+    
+    def __str__(self):
+        return "qft"
+    
+    def __repr__(self):
+        return f"QFT({self.gen_x}, {self.gen_z})"
+
+def qft(gen_x, gen_z):
+    """Create Quantum Fourier Transform operator.
+    
+    The QFT is defined algebraically by:
+        qft(X, Z) >> Z = X
+        qft(X, Z) >> X = ZÃ¢â‚¬Â 
+    
+    For qudits with X^d = Z^d = I, we have ZÃ¢â‚¬Â  = Z^(d-1).
+    
+    Args:
+        gen_x: X generator (shift operator)
+        gen_z: Z generator (clock operator)
+        
+    Returns:
+        QFT operator
+        
+    Example:
+        >>> # Qubit QFT (Hadamard)
+        >>> alg = Algebra(['X', 'Z'], ['herm', 'unit', 'anti'])
+        >>> W = qft(alg.X, alg.Z)
+        >>> (W >> alg.Z).normalize()  # Returns X
+        
+        >>> # Qutrit QFT
+        >>> alg3 = qudit(3)
+        >>> W3 = qft(alg3.X, alg3.Z)
+        >>> (W3 >> alg3.Z).normalize()  # Returns X
+        >>> (W3 >> alg3.X).normalize()  # Returns Z^2
+    """
+    return QFT(gen_x, gen_z)
+
+# ============================================================================
+# PROJECTORS (MINIMAL POLYNOMIAL METHOD)
+# ============================================================================
+
+def proj(operator, k):
+    """Create projector onto k-th eigenspace.
+    
+    Returns a Projector object that maintains duality with eigenstates.
+    
+    Args:
+        operator: Operator with pow(d) relation
+        k: Eigenspace index (0 to d-1)
+        
+    Returns:
+        Projector object
+        
+    Example:
+        >>> P0 = proj(Z, 0)
+        >>> P0 | char(Z, 0)  # Returns 1.0
+        >>> P0 | char(Z, 1)  # Returns 0.0
+    """
+    if not hasattr(operator, 'algebra') or operator.algebra is None:
+        raise ValueError("Operator must have an associated algebra")
+    
+    algebra = operator.algebra
+    
+    if not hasattr(algebra, 'power_mod') or algebra.power_mod is None:
+        raise ValueError("Operator must satisfy pow(d) relation")
+    
+    d = algebra.power_mod
+    
+    if k < 0 or k >= d:
+        raise ValueError(f"Eigenspace index must be in range [0, {d-1}]")
+    
+    return Projector(operator, k, algebra)
+
+def proj_algebraic(operator, k):
+    """Convert projector to algebraic form (for compatibility).
+    
+    This expands projectors using minimal polynomials.
+    """
+    if not hasattr(operator, 'algebra') or operator.algebra is None:
+        raise ValueError("Operator must have an associated algebra")
+    
+    algebra = operator.algebra
+    
+    if not hasattr(algebra, 'power_mod') or algebra.power_mod is None:
+        raise ValueError("Operator must satisfy pow(d) relation")
+    
+    d = algebra.power_mod
+    
+    if k < 0 or k >= d:
+        raise ValueError(f"Eigenspace index must be in range [0, {d-1}]")
+    
+    # Extract SymPy expressions
+    I_expr = _get_sympy_expr(algebra.I)
+    op_expr = _get_sympy_expr(operator)
+    
+    if d == 2:
+        if k == 0:
+            projector_expr = (I_expr + op_expr) / 2
+        else:
+            projector_expr = (I_expr - op_expr) / 2
+        
+        return YawOperator(projector_expr, algebra)
+    
+    # For d > 2: need braiding phase
+    if algebra.braiding_phase is None:
+        raise ValueError(f"Need braiding phase for d={d} > 2")
+    
+    omega = algebra.braiding_phase
+    eigenvalue = omega**k
+    
+    # Minimal polynomial approach
+    from sympy import prod
+    numerator = prod(operator._expr - omega**j for j in range(d) if j != k)
+    denominator = prod(eigenvalue - omega**j for j in range(d) if j != k)
+    
+    projector_expr = numerator / denominator
+    projector_expr = projector_expr.expand()
+    
+    return YawOperator(projector_expr, algebra)
+
+class Projector(YawOperator):
+    """Projector onto eigenspace: proj(A, k)
+    
+    Special operator that knows its duality with eigenstates:
+        proj(A, k) | char(A, j) = ÃŽÂ´_{kj}
+    """
+    
+    def __init__(self, operator, eigenspace_index, algebra=None):
+        """Create projector.
+        
+        Args:
+            operator: The operator whose eigenspace to project onto
+            eigenspace_index: Which eigenspace (0 to d-1)
+            algebra: Associated algebra (inherited from operator)
+        """
+        self.base_operator = operator
+        self.eigenspace_index = eigenspace_index
+        self._algebra = algebra or (operator.algebra if hasattr(operator, 'algebra') else None)
+        
+        # For compatibility with YawOperator interface, store symbolic expression
+        # but we'll override the key methods
+        # Use a symbolic representation
+        from sympy import Symbol
+        self._expr = Symbol(f"proj({operator}, {eigenspace_index})")
+    
+    @property
+    def algebra(self):
+        return self._algebra
+    
+    def expect(self, state, _depth=0):
+        """Expectation value: Ã¢Å¸Â¨state | proj | stateÃ¢Å¸Â©
+        
+        For eigenstates: proj(A, k) | char(A, j) = ÃŽÂ´_{kj}
+        """
+        if isinstance(state, EigenState):
+            # Check if state is an eigenstate of the same operator
+            if state.operator == self.base_operator:
+                # Orthogonality: proj(A, k) | char(A, j) = ÃŽÂ´_{kj}
+                if state.eigenspace_index == self.eigenspace_index:
+                    return 1.0
+                else:
+                    return 0.0
+            else:
+                # Different operator - need to compute overlap
+                # For now, fall back to algebraic computation
+                return super().expect(state, _depth)
+        else:
+            return super().expect(state, _depth)
+    
+    def __lshift__(self, state):
+        """Apply projector to state: proj << psi
+        
+        For eigenstates: proj(A, k) << char(A, j) = ÃŽÂ´_{kj} char(A, j)
+        """
+        if isinstance(state, EigenState):
+            # *** FIXED: Use state.observable and state.index ***
+            if state.observable == self.base_operator:
+                if state.index == self.eigenspace_index:
+                    # Projector matches state: returns state
+                    return state
+                else:
+                    # Projector annihilates state
+                    raise ValueError(f"Projector proj({self.base_operator}, {self.eigenspace_index}) "
+                                   f"annihilates char({state.observable}, {state.index})")
+            else:
+                # Different operator basis
+                return TransformedState(state, self)
+        else:
+            return TransformedState(state, self)
+    
+    def expand(self):
+        """Expand to algebraic form using minimal polynomial method.
+        
+        For qubits (d=2):
+            proj(A, 0) = (I + A)/2
+            proj(A, 1) = (I - A)/2
+        
+        For qudits (d>2):
+            Uses minimal polynomial interpolation with braiding phase
+        """
+        return proj_algebraic(self.base_operator, self.eigenspace_index)
+    
+    # Keep old name for compatibility
+    def to_algebraic(self):
+        """Deprecated: use expand() instead."""
+        return self.expand()
+    
+    def __str__(self):
+        return f"proj({self.base_operator}, {self.eigenspace_index})"
+    
+    def __repr__(self):
+        return f"Projector({self.base_operator}, {self.eigenspace_index})"
+
+# ============================================================================
+# CONTROLLED OPERATIONS
+# ============================================================================
+
+def ctrl(control_op, controlled_ops):
+    """Create controlled operation using projector decomposition.
+    
+    For control operator A with pow(d), constructs:
+        ÃŽÂ£_k proj(A, k) Ã¢Å â€” controlled_ops[k]
+    
+    This implements conditional application: if A is in eigenspace k,
+    apply controlled_ops[k] to the target system.
+    
+    Args:
+        control_op: Control operator (must have pow(d) relation)
+        controlled_ops: List of operators to apply conditionally
+                       Length must match dimension d
+        
+    Returns:
+        Controlled operation as sum of tensor products
+        
+    Example:
+        >>> CNOT = ctrl(Z, [I, X])
+        >>> CCNOT = ctrl(Z, [I@I, CNOT])  # Nested control
+    """
+    # Check if control operator has algebra with pow(d)
+    if not hasattr(control_op, 'algebra') or control_op.algebra is None:
+        raise ValueError("Control operator must have an associated algebra")
+    
+    algebra = control_op.algebra
+    
+    if not hasattr(algebra, 'power_mod') or algebra.power_mod is None:
+        raise ValueError("Control operator must satisfy pow(d) relation")
+    
+    d = algebra.power_mod
+    
+    # Check dimension match
+    if len(controlled_ops) != d:
+        raise ValueError(f"Expected {d} controlled operators for dimension-{d} "
+                        f"control, got {len(controlled_ops)}")
+    
+    # Build sum: ÃŽÂ£_k proj(control, k) Ã¢Å â€” controlled_ops[k]
+    result = None
+    
+    for k in range(d):
+        # Get projector for k-th eigenspace
+        projector = proj(control_op, k)
+        
+        # *** USE @ OPERATOR instead of tensor() function ***
+        # This handles TensorSum distribution automatically
+        term = projector @ controlled_ops[k]
+        
+        # Add to sum
+        if result is None:
+            result = term
+        else:
+            result = result + term
+    
+    return result
+
+def ctrl_single(control_op, k, target_op):
+    """Create controlled operation that acts only for specific control value.
+    
+    Applies target_op when control is in eigenspace k, identity otherwise.
+    
+    Constructs:
+        proj(control, k) Ã¢Å â€” target_op + ÃŽÂ£_{jÃ¢â€°Â k} proj(control, j) Ã¢Å â€” I
+    
+    Args:
+        control_op: Control operator
+        k: Control eigenspace index (0 to d-1)
+        target_op: Operation to apply when control is in state k
+        
+    Returns:
+        Controlled operation
+        
+    Example:
+        >>> # Apply X only when Z is in |1Ã¢Å¸Â© state
+        >>> CX_on_1 = ctrl_single(Z, 1, X)
+    """
+    if not hasattr(control_op, 'algebra') or control_op.algebra is None:
+        raise ValueError("Control operator must have an associated algebra")
+    
+    algebra = control_op.algebra
+    d = algebra.power_mod
+    
+    if k < 0 or k >= d:
+        raise ValueError(f"Control index k must be in range [0, {d-1}]")
+    
+    # Get identity for target system (infer from target_op)
+    if hasattr(target_op, 'algebra') and target_op.algebra is not None:
+        target_I = target_op.algebra.I
+    else:
+        # Assume target_op has same structure as control
+        target_I = algebra.I
+    
+    # Build controlled ops list: I everywhere except position k
+    controlled_ops = [target_I] * d
+    controlled_ops[k] = target_op
+    
+    return ctrl(control_op, controlled_ops)
+
+# ============================================================================
+# CONVENIENCE FUNCTIONS
+# ============================================================================
+
+def tensor(*factors):
+    """Create tensor product of operators or states.
+    
+    For operators: A Ã¢Å â€” B
+    For states: |ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©
+    Mixed tensors not currently supported.
+    
+    Args:
+        *factors: Operators or States to tensor together
+        
+    Returns:
+        TensorProduct (for operators) or TensorState (for states)
+    """
+    if not factors:
+        raise ValueError("tensor() requires at least one argument")
+    
+    # Check if all factors are states
+    all_states = all(isinstance(f, State) for f in factors)
+    all_operators = all(isinstance(f, YawOperator) for f in factors)
+    
+    if all_states:
+        # Tensor product of states
+        if len(factors) == 1:
+            return factors[0]
+        return TensorState(list(factors))
+    
+    elif all_operators:
+        # Tensor product of operators
+        if len(factors) == 1:
+            return factors[0]
+        
+        result = TensorProduct(list(factors))
+        
+        # *** REMOVED: Don't call normalize on tensor products ***
+        # Tensor products may not have a well-defined algebra to normalize against
+        return result
+    
+    else:
+        raise TypeError("Cannot mix operators and states in tensor product")
+    
+def tensor_power(op, n):
+    """Create n-fold tensor product: tensor_power(X, 3) = XÃ¢Å â€”XÃ¢Å â€”X.
+    
+    Args:
+        op: Operator to repeat
+        n: Number of copies
+        
+    Returns:
+        TensorProduct instance
+    """
+    return TensorProduct(*[op for _ in range(n)])
+
+def char(observable: YawOperator, index: int) -> State:
+    """Create eigenstate (characteristic state) of observable.
+    
+    Args:
+        observable: Operator to be eigenstate of
+        index: Position in spectrum (0 = largest eigenvalue)
+        
+    Returns:
+        EigenState instance
+        
+    Raises:
+        ValueError: If observable has no associated algebra
+    """
+    if not observable.algebra:
+        raise ValueError("Observable must be associated with an algebra")
+    return EigenState(observable, index, observable.algebra)
+
+def conj_op(U, A):
+    """Operator conjugation: U >> A = UÃ¢â‚¬Â  A U.
+    
+    Transforms operator A by unitary U.
+    
+    Args:
+        U: Unitary operator
+        A: Operator to transform
+        
+    Returns:
+        Conjugated operator
+    """
+    return U.conj_op(A)
+
+def conj_state(U, state):
+    """State conjugation: U << |ÃË†Ã¢Å¸Â©.
+    
+    Transforms state by unitary U.
+    
+    Args:
+        U: Unitary operator
+        state: State to transform
+        
+    Returns:
+        ConjugatedState instance
+    """
+    return U.conj_state(state)
+
+def _get_sympy_expr(obj):
+    """Extract SymPy expression from YawOperator or return as-is."""
+    if hasattr(obj, '_expr'):
+        return obj._expr
+    elif isinstance(obj, Symbol):
+        return obj
+    else:
+        return obj
+
+# ============================================================================
+# GNS CONSTRUCTION - Gelfand-Naimark-Segal Map
+# ============================================================================
+
+def _get_operator_basis(algebra):
+    """Get a basis of operators for the algebra.
+    
+    For a qubit (d=2): Returns [I, X, Y, Z]
+    For a qutrit (d=3): Returns [I, X, Z, X^2, XZ, ZX, Z^2, X^2Z, XZ^2]
+    
+    Args:
+        algebra: Algebra instance
+        
+    Returns:
+        List of YawOperator instances forming a basis
+    """
+    if not hasattr(algebra, 'power_mod'):
+        raise ValueError("Algebra must have power_mod attribute")
+    
+    d = algebra.power_mod
+    dim = d * d  # Dimension of operator space
+    
+    # Get generators
+    if not hasattr(algebra, 'X') or not hasattr(algebra, 'Z'):
+        raise ValueError("Algebra must have X and Z generators")
+    
+    X = algebra.X
+    Z = algebra.Z
+    I = algebra.I
+    
+    # Build basis by enumerating X^a Z^b for a,b < d
+    basis = []
+    for b in range(d):  # Z power
+        for a in range(d):  # X power
+            if a == 0 and b == 0:
+                op = I
+            elif a == 0:
+                op = Z ** b
+            elif b == 0:
+                op = X ** a
+            else:
+                op = (X ** a) * (Z ** b)
+            
+            basis.append(op.normalize())
+    
+    return basis
+
+def _compute_gram_matrix(state, basis):
+    """Compute Gram matrix G[i,j] = <B_i, B_j> = state.expect(B_i† B_j).
+    
+    Args:
+        state: State instance (e.g., char(Z, 0))
+        basis: List of operators
+        
+    Returns:
+        numpy array of shape (n, n)
+    """
+    n = len(basis)
+    G = np.zeros((n, n), dtype=complex)
+    
+    for i in range(n):
+        for j in range(n):
+            # Inner product: <B_i, B_j> = state.expect(B_i† B_j)
+            # For Pauli operators, B_i† = B_i (they're Hermitian)
+            # More generally, we need adjoint
+            B_i_dag = basis[i].adjoint()
+            product = (B_i_dag * basis[j]).normalize()
+            
+            # Compute expectation value
+            expectation = state.expect(product)
+            
+            # Convert to complex number
+            if hasattr(expectation, 'evalf'):
+                expectation = complex(expectation.evalf())
+            else:
+                expectation = complex(expectation)
+            
+            G[i, j] = expectation
+    
+    return G
+
+def _orthonormalize_basis(basis, gram_matrix, threshold=1e-10):
+    """Orthonormalize basis using modified Gram-Schmidt on Gram matrix.
+    
+    Args:
+        basis: List of operators
+        gram_matrix: Gram matrix G[i,j] = <basis[i], basis[j]>
+        threshold: Threshold for considering vectors as zero-norm
+        
+    Returns:
+        Tuple (orthonormal_basis, coefficients)
+        - orthonormal_basis: List of operators forming orthonormal basis
+        - coefficients: Matrix C where orthonormal_basis[i] = sum_j C[i,j] basis[j]
+    """
+    n = len(basis)
+    G = gram_matrix.copy()
+    
+    # We'll track which original basis vectors we keep
+    # and what linear combinations they become
+    kept_indices = []
+    coefficients = []
+    
+    for i in range(n):
+        # Compute norm squared: <v_i, v_i>
+        norm_sq = G[i, i].real
+        
+        if norm_sq < threshold:
+            # Skip zero-norm vectors
+            continue
+        
+        # Normalize
+        norm = np.sqrt(norm_sq)
+        coeff = np.zeros(n, dtype=complex)
+        coeff[i] = 1.0 / norm
+        coefficients.append(coeff)
+        kept_indices.append(i)
+        
+        # Gram-Schmidt: subtract projection from remaining vectors
+        for j in range(i + 1, n):
+            # <v_i, v_j> after normalization
+            overlap = G[i, j] / norm
+            
+            # Update Gram matrix for v_j
+            for k in range(j, n):
+                G[j, k] -= overlap * G[i, k] / norm
+                if k != j:
+                    G[k, j] = G[j, k].conj()
+    
+    # Build orthonormal basis from coefficients
+    orthonormal_basis = []
+    for coeff in coefficients:
+        # Construct linear combination: sum_j coeff[j] * basis[j]
+        op = None
+        for j in range(n):
+            if abs(coeff[j]) > threshold:
+                term = basis[j] * complex(coeff[j])
+                if op is None:
+                    op = term
+                else:
+                    op = op + term
+        
+        if op is not None:
+            orthonormal_basis.append(op.normalize())
+    
+    # Convert coefficients to matrix
+    if coefficients:
+        C = np.array(coefficients)
+    else:
+        C = np.array([]).reshape(0, n)
+    
+    return orthonormal_basis, C
+
+def gnsVec(state, op):
+    """Convert operator to Hilbert space vector via GNS construction.
+    
+    The GNS construction maps operators to vectors in a Hilbert space:
+        A ↦ |A⟩
+    
+    with inner product ⟨A|B⟩ = state.expect(A† B).
+    
+    Supports tensor products:
+        gnsVec(ψ₁ ⊗ ψ₂, A ⊗ B) = gnsVec(ψ₁, A) ⊗ gnsVec(ψ₂, B)
+    
+    Args:
+        state: State instance (e.g., char(Z, 0)) or TensorState
+        op: YawOperator or TensorProduct to convert to vector
+        
+    Returns:
+        numpy array representing the vector in the GNS Hilbert space
+        
+    Example:
+        >>> pauli = Algebra(gens=['X', 'Z'], rels=['herm', 'unit', 'anti', 'pow(2)'])
+        >>> psi0 = char(pauli.Z, 0)
+        >>> vec_I = gnsVec(psi0, pauli.I)  # |0⟩ state
+        >>> vec_X = gnsVec(psi0, pauli.X)  # |1⟩ state
+        >>> 
+        >>> # Tensor products
+        >>> psi_00 = TensorState([psi0, psi0])
+        >>> X1 = tensor(pauli.X, pauli.I)
+        >>> vec_X1 = gnsVec(psi_00, X1)  # Kronecker product
+    """
+    # Handle tensor products
+    if isinstance(state, TensorState) and isinstance(op, TensorProduct):
+        if len(state.states) != len(op.factors):
+            raise ValueError(
+                f"State has {len(state.states)} factors but "
+                f"operator has {len(op.factors)} factors"
+            )
+        
+        # Compute GNS vector for each component
+        component_vecs = []
+        for s, o in zip(state.states, op.factors):
+            vec = gnsVec(s, o)
+            component_vecs.append(vec)
+        
+        # Kronecker product of all components
+        result = component_vecs[0]
+        for vec in component_vecs[1:]:
+            result = np.kron(result, vec)
+        
+        return result
+    
+    # Single subsystem case
+    # Get algebra from operator or state
+    if hasattr(op, 'algebra') and op.algebra is not None:
+        algebra = op.algebra
+    elif hasattr(state, 'algebra') and state.algebra is not None:
+        algebra = state.algebra
+    else:
+        raise ValueError("Cannot determine algebra from operator or state")
+    
+    # Get operator basis
+    basis = _get_operator_basis(algebra)
+    
+    # Compute Gram matrix
+    G = _compute_gram_matrix(state, basis)
+    
+    # Orthonormalize
+    ortho_basis, C = _orthonormalize_basis(basis, G)
+    
+    # Express op in terms of orthonormal basis via direct inner products
+    # alpha[i] = ⟨ortho_basis[i], op⟩_GNS = state.expect(ortho_basis[i]† * op)
+    # This correctly handles operators that are linearly dependent in the GNS space
+    
+    if len(ortho_basis) == 0:
+        return np.array([])
+    
+    alpha = np.zeros(len(ortho_basis), dtype=complex)
+    op_normalized = op.normalize()
+    
+    for i, e_i in enumerate(ortho_basis):
+        # Compute inner product ⟨e_i, op⟩ = state.expect(e_i† * op)
+        e_i_dag = e_i.adjoint()
+        product = (e_i_dag * op_normalized).normalize()
+        
+        # Compute expectation value
+        expectation = state.expect(product)
+        
+        # Convert to complex number
+        if hasattr(expectation, 'evalf'):
+            expectation = complex(expectation.evalf())
+        else:
+            expectation = complex(expectation)
+        
+        alpha[i] = expectation
+    
+    return alpha
+
+def gnsMat(state, op):
+    """Convert operator to matrix acting on GNS Hilbert space.
+    
+    The GNS construction represents operators as matrices:
+        M[i,j] = ⟨e_i| O |e_j⟩ = state.expect(e_i† O e_j)
+    
+    where {e_i} is the orthonormal operator basis.
+    
+    Supports tensor products:
+        gnsMat(ψ₁ ⊗ ψ₂, A ⊗ B) = gnsMat(ψ₁, A) ⊗ gnsMat(ψ₂, B)
+    
+    where ⊗ on the right is the Kronecker product of matrices.
+    
+    Args:
+        state: State instance (e.g., char(Z, 0)) or TensorState
+        op: YawOperator or TensorProduct to convert to matrix
+        
+    Returns:
+        numpy array representing the matrix in the GNS Hilbert space
+        
+    Example:
+        >>> pauli = Algebra(gens=['X', 'Z'], rels=['herm', 'unit', 'anti', 'pow(2)'])
+        >>> psi0 = char(pauli.Z, 0)
+        >>> mat_X = gnsMat(psi0, pauli.X)  # Pauli X matrix
+        >>> mat_Z = gnsMat(psi0, pauli.Z)  # Pauli Z matrix
+        >>> 
+        >>> # Tensor products
+        >>> psi_00 = TensorState([psi0, psi0])
+        >>> XX = tensor(pauli.X, pauli.X)
+        >>> mat_XX = gnsMat(psi_00, XX)  # 4×4 matrix
+    """
+    # Handle tensor products
+    if isinstance(state, TensorState) and isinstance(op, TensorProduct):
+        if len(state.states) != len(op.factors):
+            raise ValueError(
+                f"State has {len(state.states)} factors but "
+                f"operator has {len(op.factors)} factors"
+            )
+        
+        # Compute GNS matrix for each component
+        component_mats = []
+        for s, o in zip(state.states, op.factors):
+            mat = gnsMat(s, o)
+            component_mats.append(mat)
+        
+        # Kronecker product of all components
+        result = component_mats[0]
+        for mat in component_mats[1:]:
+            result = np.kron(result, mat)
+        
+        return result
+    
+    # Single subsystem case
+    # Get algebra
+    if hasattr(op, 'algebra') and op.algebra is not None:
+        algebra = op.algebra
+    elif hasattr(state, 'algebra') and state.algebra is not None:
+        algebra = state.algebra
+    else:
+        raise ValueError("Cannot determine algebra from operator or state")
+    
+    # Get operator basis
+    basis = _get_operator_basis(algebra)
+    
+    # Compute Gram matrix
+    G = _compute_gram_matrix(state, basis)
+    
+    # Orthonormalize
+    ortho_basis, C = _orthonormalize_basis(basis, G)
+    
+    n = len(ortho_basis)
+    if n == 0:
+        return np.array([]).reshape(0, 0)
+    
+    # Compute matrix elements: M[i,j] = <e_i| O |e_j>
+    #                                  = state.expect(e_i† O e_j)
+    M = np.zeros((n, n), dtype=complex)
+    
+    for i in range(n):
+        e_i_dag = ortho_basis[i].adjoint()
+        for j in range(n):
+            # Compute e_i† O e_j
+            product = (e_i_dag * op * ortho_basis[j]).normalize()
+            
+            # Compute expectation value
+            expectation = state.expect(product)
+            
+            # Convert to complex number
+            if hasattr(expectation, 'evalf'):
+                expectation = complex(expectation.evalf())
+            else:
+                expectation = complex(expectation)
+            
+            M[i, j] = expectation
+    
+    return M
+
+def _express_in_basis(op, basis, algebra):
+    """Express operator as linear combination of basis elements.
+    
+    Args:
+        op: YawOperator to express
+        basis: List of basis operators
+        algebra: Algebra instance
+        
+    Returns:
+        numpy array of coefficients
+    """
+    from sympy import symbols, Symbol, expand, Add, Mul
+    from sympy.core.numbers import Number as SympyNumber
+    
+    # Normalize operator
+    op_norm = op.normalize()
+    op_expr = op_norm._expr
+    
+    # Initialize coefficients
+    coeffs = np.zeros(len(basis), dtype=complex)
+    
+    # Try to match each basis element
+    # This is a simple pattern matching approach
+    # For more complex expressions, would need symbolic manipulation
+    
+    # Expand the expression
+    expanded = expand(op_expr)
+    
+    # If it's a sum, extract terms
+    if isinstance(expanded, Add):
+        terms = expanded.args
+    else:
+        terms = [expanded]
+    
+    # For each term, try to match against basis
+    for term in terms:
+        # Extract coefficient and operator part
+        coeff = 1
+        op_part = term
+        
+        if isinstance(term, Mul):
+            # Separate numerical coefficient from operators
+            coeff_factors = []
+            op_factors = []
+            
+            for factor in term.args:
+                if isinstance(factor, (SympyNumber, int, float, complex)):
+                    coeff_factors.append(factor)
+                else:
+                    op_factors.append(factor)
+            
+            if coeff_factors:
+                from sympy import Mul as SympyMul
+                coeff = SympyMul(*coeff_factors)
+            
+            if op_factors:
+                from sympy import Mul as SympyMul
+                op_part = SympyMul(*op_factors)
+            else:
+                op_part = 1
+        
+        elif isinstance(term, (SympyNumber, int, float, complex)):
+            coeff = term
+            op_part = 1
+        
+        # Convert coefficient to complex
+        if hasattr(coeff, 'evalf'):
+            coeff = complex(coeff.evalf())
+        else:
+            coeff = complex(coeff)
+        
+        # Try to match op_part against each basis element
+        for i, basis_elem in enumerate(basis):
+            basis_expr = basis_elem._expr
+            
+            # Simple equality check
+            if expand(op_part - basis_expr) == 0:
+                coeffs[i] += coeff
+                break
+    
+    return coeffs
