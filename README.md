@@ -91,10 +91,9 @@ CNOT = ctrl(Z, [I, X])                 # Defines CNOT
 
 psi00 = char(Z, 0) @ char(Z, 0)        # |00⟩
 
-bell_start = (H @ I) << psi00          # |+0⟩
-bell_pair = CNOT << bell_start         # Bell pair
-psi_unknown = H << char(Z, 0)          # State Alice will teleport
-total_state = psi_unknown @ bell_pair        # Total state
+bell_pair = CNOT << (H @ I) << psi00   # Bell pair
+to_send = # Alice's state here!
+total_state = to_send @ bell_pair      # Total state
 
 proj00 = proj(Z, 0) @ proj(Z, 0)       # Projector onto |00⟩
 
@@ -102,7 +101,8 @@ proj00 = proj(Z, 0) @ proj(Z, 0)       # Projector onto |00⟩
 def bell_proj(i, j):
 	proj = (X**i @ X**j) >> proj00
 	return CNOT >> (H @ I) >> proj
-bell_projs = [[bell_proj(i, j) for i in [0,1]] for j in [0,1]]
+bell_projs = [[bell_proj(i, j) for i in [0,1]] 
+               for j in [0,1]]
 
 # To complete!
 ```
