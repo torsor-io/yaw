@@ -148,30 +148,30 @@ There are a few special, additional pieces of syntax:
 ```python
 [[X, Z]]                               # Commutator
 {{X, Z}}                               # Anticommutator
-[P_{k} = proj(Z, k) for k in range(3)] # Create P_0, P_1, P_2
+[P_{k} = proj(Z, k) for k in range(2)] # Create P_0, P_1
 expr ! pow(3), herm                    # Local context (temporary relations)
 ```
 
 ## Language Components
 
-yaw consists of three integrated tools:
+`yaw` consists of three integrated tools:
 
-**yaw/yaw_prototype.py** - Core library (~3700 lines)
+`yaw/yaw_prototype.py` - Core library
 - Operator algebra with symbolic manipulation
-- States as functionals (GNS construction)
+- States as functionals (+ GNS construction)
 - Quantum channels (Heisenberg and Schrödinger pictures)
 - Measurement primitives with Born rule statistics
 - Quantum error correction (encodings as functors)
 - Context management for complex programs
 
-**yaw/yaw_repl.py** - Interactive development
+`yaw/yaw_repl.py` - Interactive development
 - Algebra definition: `$alg = <gens | rels>`
 - Subscripted variables: `P_{k}`
 - List comprehensions with assignment
 - Commutator/anticommutator syntax
 - Multi-line statements (for, if, def)
 
-**yaw/yawc.py** - Compiler
+`yaw/yawc.py` - Compiler
 - Transforms `.yaw` files to Python
 - Preserves algebraic semantics
 - Generates readable, documented code
@@ -179,7 +179,7 @@ yaw consists of three integrated tools:
 
 ## Contributing
 
-We welcome contributions! Areas where you can help:
+We welcome contributors! Areas where you can help:
 
 **Current: v0.1.0 (Initial Public Release)**
 
