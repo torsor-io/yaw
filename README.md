@@ -98,14 +98,14 @@ total = psi_unknown @ bell_pair        # Total state
 
 proj00 = proj(Z, 0) @ proj(Z, 0)       # Projector onto |00⟩
 
-# define Bell measurement projectors
+# Define Bell measurement projectors
 def bell_proj(i, j):
 	proj = (X**i @ X**j) >> proj00
 	return CNOT >> (H @ I) >> proj
+bell_projs = [[bell_proj(i, j) for i in [0,1]] for j in [0,1]]
 
-# === Measurement with branching (all outcomes) ===
-# This shows all possible measurement results and their probabilities
-branches = stBranches([bell_proj(i, j) for [i, j] in [[]]], total)
+# Measurement results and probabilities
+branches = stBranches(bell_projs, total)
 
 print("Alice's measurement outcomes:")
 for bob_state, probability in branches():
