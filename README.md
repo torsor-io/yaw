@@ -177,9 +177,7 @@ expr ! pow(3), herm                    # Local context (temporary relations)
 - Generates readable, documented code
 - Handles special syntax (commutators, subscripts, comprehensions)
 
-## Contributing
-
-We welcome contributors! Areas where you can help:
+## Status and roadmap
 
 **Current: v0.1.0 (Initial Public Release)**
 
@@ -211,46 +209,6 @@ We welcome contributors! Areas where you can help:
 - Stabilizer code automation
 - Type system for quantum programs
 - Module/import system
-
-## Status & Roadmap
-
-**Current: v0.1.0 (Initial Public Release)**
-
-yaw is research software transitioning to production. What works:
-- ✅ Core operator algebra with normalization
-- ✅ State functionals with GNS foundations
-- ✅ Full-featured REPL with special syntax
-- ✅ Compiler (yaw → Python)
-- ✅ Quantum channels and measurement
-- ✅ Basic quantum error correction
-- ✅ Multi-qudit tensor products
-- ✅ Controlled operations and QFT
-
-**Known limitations:**
-- Oscillator (bosonic) support incomplete
-- Limited compiler optimizations
-- Some edge cases in state transformations
-- Performance not yet optimized (correctness first)
-
-**Roadmap:**
-
-*v0.2.0 (Q1 2025)*
-- Oscillator algebra and bosonic codes
-- Advanced QEC (surface, color codes)
-- Compiler optimization passes
-- Comprehensive test suite
-
-*v0.3.0 (Q2-Q3 2025)*
-- λix backend (hardware-agnostic compilation)
-- Stabilizer code automation
-- Type system for quantum programs
-- Module/import system
-
-*v1.0.0 (2026)*
-- Production-ready with λix integration
-- Hardware backend connectors
-- Formal verification tools
-- Industry partnerships
 
 ## Contributing
 
