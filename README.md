@@ -252,16 +252,6 @@ If you use yaw in research, please cite:
 }
 ```
 
-## Theoretical Foundation
-
-yaw builds on rigorous mathematical physics:
-
-**GNS Construction**: States are positive linear functionals ω: A → ℂ on operator algebras. The Gelfand-Naimark-Segal construction recovers Hilbert space representations, reversing the usual formulation—states are primary, Hilbert space emerges.
-
-**C*-Algebras**: Operator algebras with addition, multiplication, adjoint, and norm. yaw operators satisfy algebraic relations (hermiticity, unitarity, braiding) without explicit matrix representations.
-
-**Hardware Agnosticism**: By working at the algebraic level, yaw programs are independent of physical implementation—the same code compiles to superconducting qubits, trapped ions, photonics, or logical qubits.
-
 ## License
 
 Apache 2.0 - see [LICENSE](LICENSE)
