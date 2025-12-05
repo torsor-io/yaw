@@ -78,45 +78,11 @@ X, Z = pauli.X, pauli.Z
 print((X * Z * X).normalize())  # -Z
 ```
 
-## Example: Quantum Teleportation
-
-Here's quantum teleportation in `yaw`, demonstrating how we can build
-everything we want from scratch:
-
-```python
-$alg = <X, Z | herm, unit, anti>       # Defines algebra of qubits
-
-H = (X + Z) / sqrt(2)                  # Defines Hadamard gate
-CNOT = ctrl(Z, [I, X])                 # Defines CNOT
-
-psi00 = char(Z, 0) @ char(Z, 0)        # |00⟩
-
-bell_pair = CNOT << (H @ I) << psi00   # Bell pair
-to_send = # Alice's state here!
-total_state = to_send @ bell_pair      # Total state
-
-proj00 = proj(Z, 0) @ proj(Z, 0)       # Projector onto |00⟩
-
-# Define Bell measurement projectors
-def bell_proj(i, j):
-	proj = (X**i @ X**j) >> proj00
-	return CNOT >> (H @ I) >> proj
-bell_projs = [[bell_proj(i, j) for i in [0,1]] 
-               for j in [0,1]]
-
-# To complete!
-```
-
-There are a few key differences from the normal circuit picture:
-
-- **Functional**: We defined everything from scratch!
-- **No circuit diagrams**: Operations are algebraic transformations.
-- **States as functionals**: Not vectors, but functions on observables (GNS construction).
-- **Branching measurement**: See all outcomes explicitly, not just one sample.
-
 ## Core Concepts
 
 ### Algebras Define Systems
+
+We define algebras from "scratch" using generators and relations, e.g.
 
 ```python
 # Qubit (Pauli algebra)
@@ -125,40 +91,47 @@ $alg = <X, Z | herm, unit, anti>
 # Qutrit (dimension 3)
 $alg = <X, Z | herm, unit, pow(3), braid(exp(2*pi*I/3))>
 
-# Relations encode physics: hermiticity, unitarity, dimension, braiding
 ```
 
 ### States are Functionals
 
+If we view operators as random variables, states are *expectation functionals*. Eigenstates become expectations for which an operator has zero variance.
+
 ```python
 psi0 = char(Z, 0)      # |0⟩ eigenstate
-psi0.expect(Z)         # ⟨Z⟩ = 1.0
-psi0.expect(X)         # ⟨X⟩ = 0.0
 
-# States eat operators, return expectation values
-Z | psi0               # Alternate syntax: 1.0
+   Z | psi0               # ⟨Z⟩ = 1.0
+   X | psi 0              # ⟨X⟩ = 0.0
+Z**2 | psi0            # ⟨Z²⟩ = 1.0 - same as mean squared
+
+psi0.expect(Z)         # Python syntax
 ```
 
-### Three Fundamental Operations
+### Three Fundamental Combinators
+
+We can combine operators, states, and channels in various ways:
 
 ```python
-A @ B         # Tensor product: A ⊗ B
-U >> A        # Conjugation: U† A U (transform operator)
-U << psi      # State evolution: U|ψ⟩
-A | psi       # Expectation: ⟨ψ|A|ψ⟩
+A @ B           # Tensor product: A ⊗ B
+U >> A          # Operator conjugation: U† A U (Heisenberg)
+U << psi        # State conjugation: ψ(U† ⋅ U) (Schrödinger)
+A | psi         # Evaluation: substitute A into state ψ, ψ(A)
+A | C_1 | C_2   # Evaluation: substitute A into channel C_1, result into C_2, etc
 ```
 
 ### Measurement: Four Interfaces
 
+Measurement is a tricky notion, since it can the average outcome, a random choice of state according to the measurement distribution, or a branching process where all outcomes are kept. Infeasible in large examples, but useful for small examples!
+
 ```python
 # 1. Expectation values (most common)
-Z | psi
+Z | psi             
 
-# 2. Single-shot state measurement (samples one outcome)
+# 2. Single-shot state measurement (Schrödinger)
 measure = stMeasure([proj(Z, 0), proj(Z, 1)], psi)
 collapsed_state, probability = measure()
 
-# 3. Single-shot operator measurement (Heisenberg picture)
+# 3. Single-shot operator measurement (Heisenberg)
 measure = opMeasure([K0, K1], psi)
 transformed_op, probability = measure(X)
 
@@ -169,6 +142,8 @@ for state, prob in branches():
 ```
 
 ### Special Syntax
+
+There are a few special, additional pieces of syntax:
 
 ```python
 [[X, Z]]                               # Commutator
