@@ -29,19 +29,6 @@ way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [
 *self-conjugating*, since `yaw⁻¹` = `way`.
 Someone had too much time on their hands.
 
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Core Concepts](#core-concepts)
-- [Language Components](#language-components)
-- [Status and Roadmap](#status-and-roadmap)
-- [Contributing](#contributing)
-- [Philosophy](#philosophy)
-- [References](#references)
-- [Citation](#citation)
-- [License](#license)
-- [Contact](#contact)
-
 ## Quick Start
 
 ### Installation
