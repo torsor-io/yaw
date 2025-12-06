@@ -37,6 +37,7 @@ Someone had too much time on their hands.
 - [Status and Roadmap](#status-and-roadmap)
 - [Contributing](#contributing)
 - [Philosophy](#philosophy)
+- [References](#references)
 - [Citation](#citation)
 - [License](#license)
 
@@ -246,6 +247,11 @@ We welcome contributions! Areas where you can help:
 - **Fault-tolerant native**: Designed for error-correction integration, not NISQ
 - **Composability**: Small pieces combine naturally
 - **Joy-coded**: If it's not beautiful, it's not done
+
+## References
+
+- [The Structure and Interpretation of Quantum Programs I: Foundations](https://arxiv.org/abs/2509.04527) (2025), David Wakeham. A detailed introduction to the mathematical foundations of `yaw`.
+- [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + fictional history motivating the need for a new approach to quantum computing.
 
 ## Citation
 
