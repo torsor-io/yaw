@@ -7,7 +7,7 @@ H = (X + Z) / sqrt(2)                      # define the Hadamard gate
 conj = H >> Z                              # conjugate Z by H using '>>'
 
 print("Algebraic verification:")
-print("H†ZH =", conj)                      # should simplify to X
+print("H†ZH =", conj)                      # simplifies to X
 
 psi0 = char(Z, 0)                          # invoke ⟨0|⋅|0⟩ state
 psi_plus = H << psi0                       # conjugate state with '<<' to create ⟨+|⋅|+⟩ 
