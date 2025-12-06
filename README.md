@@ -181,7 +181,7 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 - Subscripted variables: `P_{k}`
 - List comprehensions with assignment
 - Commutator/anticommutator syntax
-- Multi-line statements (for, if, def)
+- Multi-line statements (`for`, `if`, `def`)
 
 `yaw/yawc.py` - *Compiler*
 - Transforms `.yaw` files to Python
