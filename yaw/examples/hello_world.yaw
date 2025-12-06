@@ -1,0 +1,43 @@
+# hello_world.yaw
+# First quantum program in yaw: Create and measure a superposition
+
+# Define the Pauli algebra (qubit)
+$alg = <X, Z | herm, unit, anti, pow(2)>
+
+# Create the Hadamard gate
+H = (X + Z) / sqrt(2)
+
+# Start with |0⟩ state
+psi0 = char(Z, 0)
+
+# Apply Hadamard to create superposition |+⟩ = (|0⟩ + |1⟩)/√2
+psi_plus = H << psi0
+
+# Measure in computational basis
+print("State after Hadamard:")
+print("⟨X⟩ =", X | psi_plus)  # Should be 1.0 (eigenstate of X)
+print("⟨Z⟩ =", Z | psi_plus)  # Should be 0.0 (equal superposition)
+
+# Create projectors onto |0⟩ and |1⟩
+P_0 = proj(Z, 0)
+P_1 = proj(Z, 1)
+
+# Show all measurement outcomes (branching)
+print("\nMeasurement in Z basis:")
+branches = stBranches([P_0, P_1], psi_plus)
+for state, prob in branches():
+    print(f"  Probability: {prob}")
+
+# Verify Hadamard property: H†ZH = X
+print("\nAlgebraic verification:")
+print("H†ZH =", (H >> Z).normalize())  # Should be X
+
+# Get concrete Hilbert space representation
+print("\nConcrete representation (GNS):")
+H_matrix = gnsMat(psi0, H)
+print("Hadamard matrix:")
+print(H_matrix)
+
+vec_plus = gnsVec(psi_plus, I)
+print("\n|+⟩ state vector:")
+print(vec_plus)
