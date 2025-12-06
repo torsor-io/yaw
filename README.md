@@ -53,8 +53,7 @@ pip install -r requirements.txt  # Just sympy and numpy for now
 ### Try the example
 
 ```bash
-python -m yaw.y2py examples/hello_world.yaw -o hello.py
-python hello.py
+python -m yaw.yaw_repl < examples/hello_world.yaw
 ```
 
 ### Three ways to use `yaw`
