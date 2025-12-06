@@ -107,8 +107,8 @@ If we view operators as random variables, states are *expectation functionals*. 
 ```python
 psi0 = char(Z, 0)      # |0⟩ eigenstate
 
-   Z | psi0               # ⟨Z⟩ = 1.0
-   X | psi 0              # ⟨X⟩ = 0.0
+   Z | psi0            # ⟨Z⟩ = 1.0
+   X | psi 0           # ⟨X⟩ = 0.0
 Z**2 | psi0            # ⟨Z²⟩ = 1.0 - same as mean squared
 
 psi0.expect(Z)         # Python syntax
