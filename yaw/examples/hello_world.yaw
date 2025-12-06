@@ -1,43 +1,23 @@
 # hello_world.yaw
-# First quantum program in yaw: Create and measure a superposition
+# Create and measure a superposition
 
-# Define the Pauli algebra (qubit)
-$alg = <X, Z | herm, unit, anti, pow(2)>
+$alg = <X, Z | herm, unit, anti, pow(2)>   # define the Pauli algebra
 
-# Create the Hadamard gate
-H = (X + Z) / sqrt(2)
+H = (X + Z) / sqrt(2)                      # define the Hadamard gate
+conj = H >> Z                              # conjugate Z by H using '>>'
 
-# Start with |0⟩ state
-psi0 = char(Z, 0)
+print("Algebraic verification:")
+print("H†ZH =", conj)                      # should simplify to X
 
-# Apply Hadamard to create superposition |+⟩ = (|0⟩ + |1⟩)/√2
-psi_plus = H << psi0
+psi0 = char(Z, 0)                          # invoke ⟨0|⋅|0⟩ state
+psi_plus = H << psi0                       # conjugate state with '<<' to create ⟨+|⋅|+⟩ 
 
-# Measure in computational basis
-print("State after Hadamard:")
-print("⟨X⟩ =", X | psi_plus)  # Should be 1.0 (eigenstate of X)
-print("⟨Z⟩ =", Z | psi_plus)  # Should be 0.0 (equal superposition)
+print("\nExpectations in ⟨+|⋅|+⟩ state:")
+print("⟨X⟩ =", X | psi_plus)               # expectation should be 1.0
+print("⟨Z⟩ =", Z | psi_plus)               # expectation should be 0.0
 
-# Create projectors onto |0⟩ and |1⟩
-P_0 = proj(Z, 0)
-P_1 = proj(Z, 1)
+H_matrix = gnsMat(psi0, H)                # represent H in Hilbert space associated with |0⟩
+print("\nHadamard matrix:\n", H_matrix)   # should give textbook matrix [[1, 1], [1, -1]]/√2
 
-# Show all measurement outcomes (branching)
-print("\nMeasurement in Z basis:")
-branches = stBranches([P_0, P_1], psi_plus)
-for state, prob in branches():
-    print(f"  Probability: {prob}")
-
-# Verify Hadamard property: H†ZH = X
-print("\nAlgebraic verification:")
-print("H†ZH =", (H >> Z).normalize())  # Should be X
-
-# Get concrete Hilbert space representation
-print("\nConcrete representation (GNS):")
-H_matrix = gnsMat(psi0, H)
-print("Hadamard matrix:")
-print(H_matrix)
-
-vec_plus = gnsVec(psi_plus, I)
-print("\n|+⟩ state vector:")
-print(vec_plus)
+vec_plus = gnsVec(psi0, H)                # represent |+⟩ = H|0⟩ as a vector in the Hilbert space
+print("\n|+⟩ state vector:", vec_plus)    # should give textbook (|0⟩ + |1⟩)/√2
