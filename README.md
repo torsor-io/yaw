@@ -156,7 +156,7 @@ There are a few special, additional pieces of syntax:
 expr ! pow(3), herm                      # Local context (temporary relations)
 ```
 
-### Codebase
+## Codebase
 
 ### Language Components
 
