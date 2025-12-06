@@ -1,5 +1,10 @@
 # yaw: Algebraic Quantum Programming
 
+![Status](https://img.shields.io/badge/status-research%20prototype-yellow)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+![Python](https://img.shields.io/badge/python-3.7+-green)
+![Version](https://img.shields.io/badge/version-0.1.0-orange)
+
 **Stop fiddling with qubits and program observables directly.**
 
 `yaw` is a quantum programming language where programs are elements of operator algebras, not circuit
