@@ -130,7 +130,7 @@ Z**2 | psi0            # ⟨Z²⟩ = 1.0 - same as mean squared
 psi0.expect(Z)         # Python syntax
 ```
 
-The vertical line `|` should recall conditional probability, which assigns (probablistic) *context*. Here, the state is itself a probabilistic context in which to evaluate the operator. This is also like the pipe operator from `Unix`. Snap!
+The vertical line `|` should recall conditional probability, which assigns (probablistic) *context*. Here, the state is itself a probabilistic context in which to evaluate the operator. This is also like the pipe operator from `Unix` and acts the same way. Snap!
 
 ### Fundamental combinators
 
