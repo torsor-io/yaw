@@ -230,7 +230,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 - Basic QEC support needs to be finalized
 
 **Examples:**
-- `hello_world.yaw` - Demonstrates core concepts (superposition, measurement, GNS)
+- `hello_world.yaw` demonstrates core concepts (superposition, measurement, GNS)
 - More examples coming in v0.2.0
 
 ### Roadmap
