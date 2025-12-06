@@ -198,8 +198,8 @@ class Encoding:
     Example:
         >>> # 3-qubit repetition code
         >>> code = rep(3)
-        >>> X_L | code  # Returns X Ã¢Å â€” X Ã¢Å â€” X
-        >>> (X + Z) | code  # Returns (XÃ¢Å â€”XÃ¢Å â€”X) + (ZÃ¢Å â€”ZÃ¢Å â€”Z)
+        >>> X_L | code  # Returns X ⊗ X ⊗ X
+        >>> (X + Z) | code  # Returns (X⊗X⊗X) + (Z⊗Z⊗Z)
     """
     
     def __init__(self, logical_algebra, physical_algebra, generator_map):
@@ -209,7 +209,7 @@ class Encoding:
             logical_algebra: Source algebra (logical qubits/qudits)
             physical_algebra: Target algebra (physical qubits/qudits)
             generator_map: Dict mapping logical generator names to physical operators
-                          e.g., {'X': XÃ¢Å â€”XÃ¢Å â€”X, 'Z': ZÃ¢Å â€”ZÃ¢Å â€”Z, 'I': IÃ¢Å â€”IÃ¢Å â€”I}
+                          e.g., {'X': X⊗X⊗X, 'Z': Z⊗Z⊗Z, 'I': I⊗I⊗I}
         """
         self.logical_algebra = logical_algebra
         self.physical_algebra = physical_algebra
@@ -343,18 +343,18 @@ class Encoding:
     
     def __str__(self):
         gen_names = list(self.generator_map.keys())
-        return f"Encoding([{', '.join(gen_names)}]: logical Ã¢â€ â€™ physical)"
+        return f"Encoding([{', '.join(gen_names)}]: logical ↦ physical)"
     
     def __repr__(self):
-        return f"Encoding({self.logical_algebra} Ã¢â€ â€™ {self.physical_algebra})"
+        return f"Encoding({self.logical_algebra} ↦ {self.physical_algebra})"
 
 def rep(n, algebra=None):
     """n-fold repetition code encoding.
     
     Maps each logical operator to n tensor copies of itself:
-        X_L Ã¢â€ â€™ X Ã¢Å â€” X Ã¢Å â€” ... Ã¢Å â€” X  (n times)
-        Z_L Ã¢â€ â€™ Z Ã¢Å â€” Z Ã¢Å â€” ... Ã¢Å â€” Z  (n times)
-        I_L Ã¢â€ â€™ I Ã¢Å â€” I Ã¢Å â€” ... Ã¢Å â€” I  (n times)
+        X_L ↦ X ⊗ X ⊗ ... ⊗ X  (n times)
+        Z_L ↦ Z ⊗ Z ⊗ ... ⊗ Z  (n times)
+        I_L ↦ I ⊗ I ⊗ ... ⊗ I  (n times)
     
     This is the simplest quantum error correction code, protecting against
     single bit flips (for odd n).
@@ -369,8 +369,8 @@ def rep(n, algebra=None):
     Example:
         >>> $alg = qudit(2)
         >>> code = rep(3)
-        >>> X | code  # X Ã¢Å â€” X Ã¢Å â€” X
-        >>> (X + Z) | code  # (XÃ¢Å â€”XÃ¢Å â€”X) + (ZÃ¢Å â€”ZÃ¢Å â€”Z)
+        >>> X | code  # X ⊗ X ⊗ X
+        >>> (X + Z) | code  # (X⊗X⊗X) + (Z⊗Z⊗Z)
         
         >>> # Stabilizers for 3-qubit repetition code (bit flip)
         >>> S1 = Z @ Z @ I
@@ -383,7 +383,7 @@ def rep(n, algebra=None):
     if algebra is None:
         return _PartialRepEncoding(n)
     
-    # Build generator map: each generator Ã¢â€ â€™ n-fold tensor product
+    # Build generator map: each generator ↦ n-fold tensor product
     generator_map = {}
     
     for gen_name, gen_op in algebra.generators.items():
@@ -494,13 +494,13 @@ class StabilizerCode:
             state: Quantum state (physical qubits)
             
         Returns:
-            Tuple of stabilizer measurement outcomes (each Â±1)
+            Tuple of stabilizer measurement outcomes (each ±1)
         """
         syndrome = []
         for stab in self.stabilizers:
             # Measure expectation value of stabilizer
             outcome = state.expect(stab)
-            # Convert to Â±1 (assuming eigenvalues are Â±1)
+            # Convert to ±1 (assuming eigenvalues are ±1)
             syndrome.append(outcome)
         return tuple(syndrome)
     
@@ -741,7 +741,7 @@ def bit_flip_code(algebra=None):
     encoding = Encoding(algebra, None, generator_map)
     
     # Build complete error correction table
-    # Syndromes are (S1, S2) where each is Â±1
+    # Syndromes are (S1, S2) where each is ±1
     error_table = {}
     
     # No error: both stabilizers measure +1
@@ -807,8 +807,8 @@ class YawOperator:
         """Enable A | context syntax.
         
         Handles:
-        - state | A  Ã¢â€ â€™ expectation value (existing)
-        - A | encoding  Ã¢â€ â€™ encoded operator (new)
+        - state | A  ↦ expectation value (existing)
+        - A | encoding  ↦ encoded operator (new)
         """
         if isinstance(other, State):
             # Existing: expectation value
@@ -838,7 +838,7 @@ class YawOperator:
         return YawOperator(self._expr * other, self.algebra)
 
     def __matmul__(self, other):
-        """Tensor product using @ operator: A @ B = A Ã¢Å â€” B
+        """Tensor product using @ operator: A @ B = A ⊗ B
 
         Distributes over sums on both sides.
         """
@@ -869,7 +869,7 @@ class YawOperator:
             # Simple tensor product
             return TensorProduct([self, other])
         elif isinstance(other, TensorProduct):
-            # A @ (B Ã¢Å â€” C) = A Ã¢Å â€” B Ã¢Å â€” C
+            # A @ (B ⊗ C) = A ⊗ B ⊗ C
             return TensorProduct([self] + other.factors)
         elif isinstance(other, TensorSum):
             # A @ (B + C + ...) = A @ B + A @ C + ...
@@ -944,7 +944,7 @@ class YawOperator:
         return YawOperator(self._expr ** exp, self.algebra)
     
     def adjoint(self):
-        """Hermitian conjugate: AÃ¢â‚¬Â  or A*"""
+        """Hermitian conjugate: A† or A*"""
         return YawOperator(Dagger(self._expr), self.algebra)
     
     @property
@@ -1003,10 +1003,10 @@ class YawOperator:
         return self
     
     def conj_op(self, other):
-        """Operator conjugation: self >> other = selfÃ¢â‚¬Â  * other * self
+        """Operator conjugation: self >> other = self† * other * self
         
         This is the 'conjugate by' operation for operators.
-        For unitary U: U >> A = UÃ¢â‚¬Â  A U
+        For unitary U: U >> A = U† A U
         
         Args:
             other: Operator to conjugate
@@ -1020,7 +1020,7 @@ class YawOperator:
         """State conjugation: self << state
         
         Returns a new state transformed by this operator.
-        For unitary U: U << |ÃË†Ã¢Å¸Â© is the transformed state.
+        For unitary U: U << |ᵢË†⟩ is the transformed state.
         
         Args:
             state: State to transform
@@ -1100,7 +1100,7 @@ class YawOperator:
         return False
 
     def __rshift__(self, other):
-        """Operator conjugation: U >> A means U >> A = UÃ¢â‚¬Â  A U
+        """Operator conjugation: U >> A means U >> A = U† A U
         
         Usage: H >> Z instead of H.conj_op(Z)
         """
@@ -1132,7 +1132,7 @@ class YawOperator:
         if isinstance(state, EigenState):
             # Case 1: Eigenstate of the same operator
             if self == state.observable:
-                # A << char(A, k) = ÃŽÂ»_k char(A, k)
+                # A << char(A, k) = λ_k char(A, k)
                 # For now, just return the state (eigenvalue absorbed)
                 return state
 
@@ -1153,7 +1153,7 @@ class YawOperator:
                             return EigenState(state.observable, flipped_index, state.algebra)
                         else:
                             # For d > 2, more complex
-                            return ConjugatedState(self, state)
+                            return TransformedState(state, self)
 
                     # Try to compute commutator [A, B]
                     comm = (self * state.observable - state.observable * self).normalize()
@@ -1167,11 +1167,11 @@ class YawOperator:
                     # If computation fails, fall back
                     pass
 
-            # Default: create conjugated state
-            return ConjugatedState(self, state)
+            # Default: create transformed state
+            return TransformedState(state, self)
 
         else:
-            return ConjugatedState(self, state)
+            return TransformedState(state, self)
 
 # ============================================================================
 # COMMUTATORS AND ANTICOMMUTATORS
@@ -1182,7 +1182,7 @@ def comm(A, B):
     
     The commutator measures how much two operators fail to commute.
     - [A, B] = 0 means A and B commute
-    - [A, B] Ã¢â€°Â  0 means A and B don't commute
+    - [A, B] ≠ 0 means A and B don't commute
     
     Args:
         A: First operator (YawOperator, TensorProduct, or TensorSum)
@@ -1203,7 +1203,7 @@ def acomm(A, B):
     
     The anticommutator measures symmetric multiplication.
     - {A, B} = 0 means A and B anticommute
-    - {A, B} Ã¢â€°Â  0 means they don't anticommute
+    - {A, B} ≠ 0 means they don't anticommute
     
     For qubits with Pauli operators:
     - {X, Z} = 0 (anticommute)
@@ -1227,7 +1227,7 @@ def acomm(A, B):
 # ============================================================================
 
 class TensorSum:
-    """Sum of tensor products: AÃ¢Å â€”B + CÃ¢Å â€”D + ..."""
+    """Sum of tensor products: A⊗B + C⊗D + ..."""
     
     def __init__(self, terms):
         """Create sum of terms."""
@@ -1568,7 +1568,7 @@ class TensorSum:
                 return TensorSum(terms)
 
         elif isinstance(other, TensorProduct):
-            # (A + B) @ (C Ã¢Å â€” D) - distribute left over right
+            # (A + B) @ (C ⊗ D) - distribute left over right
             terms = [term @ other for term in self.terms]
             return TensorSum(terms)
 
@@ -1677,7 +1677,7 @@ class TensorSum:
         return str(structure)
 
 class TensorProduct:
-    """Tensor product of operators: A Ã¢Å â€” B Ã¢Å â€” C"""
+    """Tensor product of operators: A ⊗ B ⊗ C"""
     
     def __init__(self, factors):
         """Create tensor product.
@@ -1707,7 +1707,7 @@ class TensorProduct:
         return self.normalize()
             
     def __lshift__(self, state):
-        """Apply tensor product to state: (A Ã¢Å â€” B) << (|ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©)"""
+        """Apply tensor product to state: (A ⊗ B) << (|ᵢË†⟩ ⊗ |ᵢâ€ ⟩)"""
         if isinstance(state, TensorState):
             if len(self.factors) != len(state.states):
                 raise ValueError(
@@ -1727,9 +1727,9 @@ class TensorProduct:
             raise ValueError("Cannot apply TensorProduct to non-tensor state")
             
     def __matmul__(self, other):
-        """Extend tensor product: (A Ã¢Å â€” B) @ C = A Ã¢Å â€” B Ã¢Å â€” C
+        """Extend tensor product: (A ⊗ B) @ C = A ⊗ B ⊗ C
 
-        Distributes over sums: (A Ã¢Å â€” B) @ (C + D) = A Ã¢Å â€” B Ã¢Å â€” C + A Ã¢Å â€” B Ã¢Å â€” D
+        Distributes over sums: (A ⊗ B) @ (C + D) = A ⊗ B ⊗ C + A ⊗ B ⊗ D
         """
         from sympy import Add
 
@@ -1751,7 +1751,7 @@ class TensorProduct:
             return TensorProduct(self.factors + other.factors)
 
         elif isinstance(other, TensorSum):
-            # (A Ã¢Å â€” B) @ (C + D + ...) 
+            # (A ⊗ B) @ (C + D + ...) 
             distributed_terms = [self @ term for term in other.terms]
             return TensorSum(distributed_terms)
 
@@ -1800,8 +1800,8 @@ class TensorProduct:
     def __mul__(self, other):
         """Multiplication of tensor products or scalars.
         
-        For scalars: c * (A Ã¢Å â€” B) = (cA) Ã¢Å â€” B
-        For tensor products: (AÃ¢Å â€”B) * (CÃ¢Å â€”D) = (A*C) Ã¢Å â€” (B*D)
+        For scalars: c * (A ⊗ B) = (cA) ⊗ B
+        For tensor products: (A⊗B) * (C⊗D) = (A*C) ⊗ (B*D)
         """
         # Scalar multiplication
         if isinstance(other, (int, float, complex)):
@@ -1823,7 +1823,7 @@ class TensorProduct:
                     f"{len(self.factors)} vs {len(other.factors)}"
                 )
             
-            # Element-wise multiplication: (AÃ¢Å â€”B) * (CÃ¢Å â€”D) = (A*C) Ã¢Å â€” (B*D)
+            # Element-wise multiplication: (A⊗B) * (C⊗D) = (A*C) ⊗ (B*D)
             new_factors = []
             for f1, f2 in zip(self.factors, other.factors):
                 new_factors.append(f1 * f2)
@@ -1834,7 +1834,7 @@ class TensorProduct:
             raise TypeError(f"Cannot multiply TensorProduct with {type(other)}")
     
     def __rmul__(self, other):
-        """Right multiplication: c * (A Ã¢Å â€” B)
+        """Right multiplication: c * (A ⊗ B)
         
         This is called when the left operand doesn't know how to multiply
         with TensorProduct (e.g., int * TensorProduct).
@@ -1960,12 +1960,12 @@ class Algebra:
 
         for rel in rels:
             if rel == 'herm':
-                # Hermitian: XÃ¢â‚¬Â  = X
+                # Hermitian: X† = X
                 for name, op_expr in sympy_gens.items():
                     rules.append((Dagger(op_expr), op_expr))
 
             elif rel == 'unit':
-                # Unitary: XÃ¢â‚¬Â X = I
+                # Unitary: X†X = I
                 for name, op_expr in sympy_gens.items():
                     rules.append((op_expr * Dagger(op_expr), sympy_I))
                     rules.append((Dagger(op_expr) * op_expr, sympy_I))
@@ -1975,7 +1975,7 @@ class Algebra:
                 self.braid_phase = -1
 
             elif rel.startswith('braid('):
-                # Braiding relation: XY = Ãâ€° YX
+                # Braiding relation: XY = ᵢâ€° YX
                 match = re.match(r'braid\((.*)\)', rel)
                 if match:
                     phase_expr = match.group(1)
@@ -2006,7 +2006,7 @@ class Algebra:
         # Derive pow(2) from herm + unit
         has_explicit_pow = any(rel.startswith('pow(') for rel in rels)
         if has_herm and has_unit and not has_explicit_pow:
-            # Hermitian + Unitary Ã¢Å¸Â¹ XÃ‚Â² = I
+            # Hermitian + Unitary ⟹ X₂ = I
             self.power_mod = 2  # *** Store derived modulus ***
             for name, op_expr in sympy_gens.items():
                 rules.append((op_expr**2, sympy_I))
@@ -2076,13 +2076,13 @@ class Algebra:
             return reduce_term(expr)
     
     def _apply_braiding(self, expr):
-        """Apply braiding relations: XY = Ãâ€° YX
+        """Apply braiding relations: XY = ᵢâ€° YX
 
         Uses bubble sort to put operators in canonical order,
         accumulating the braiding phase for each swap.
 
-        For anticommutation: Ãâ€° = -1 (XY = -YX)
-        For general braiding: Ãâ€° = exp(2Ãâ‚¬i/d) or other phase
+        For anticommutation: ᵢâ€° = -1 (XY = -YX)
+        For general braiding: ᵢâ€° = exp(2ᵢâ‚¬i/d) or other phase
         """
         # Only apply if we have a braiding phase
         if self.braid_phase is None:
@@ -2148,14 +2148,14 @@ class Algebra:
                     new_expr = expr.replace(pattern, replacement)
                     if new_expr != expr:
                         if verbose:
-                            print(f"  Ã¢Å“â€œ Rule applied: {expr} Ã¢â€ â€™ {new_expr}")
+                            print(f"  ᵢÅ“â€œ Rule applied: {expr} ↦ {new_expr}")
                         expr = new_expr
 
             # Reduce higher powers
             new_expr = self._reduce_powers(expr)
             if new_expr != expr:
                 if verbose:
-                    print(f"  Ã¢Å“â€œ Powers reduced: {expr} Ã¢â€ â€™ {new_expr}")
+                    print(f"  ᵢÅ“â€œ Powers reduced: {expr} ↦ {new_expr}")
                 expr = new_expr
 
             # Apply braiding (replaces old anticommutation)
@@ -2164,21 +2164,21 @@ class Algebra:
                 if new_expr != expr:
                     if verbose:
                         phase_str = str(self.braid_phase)
-                        print(f"  Ã¢â‚¬Â¢ Braiding applied (Ãâ€°={phase_str}): {expr}")
+                        print(f"  • Braiding applied (ᵢâ€°={phase_str}): {expr}")
                     expr = new_expr
 
             # Simplify identities
             new_expr = self._simplify_identity(expr)
             if new_expr != expr:
                 if verbose:
-                    print(f"  Ã¢Å“â€œ Identity simplified: {expr} Ã¢â€ â€™ {new_expr}")
+                    print(f"  ᵢÅ“â€œ Identity simplified: {expr} ↦ {new_expr}")
                 expr = new_expr
 
             expr = expand(expr)
 
             if expr == old_expr:
                 if verbose:
-                    print(f"  Ã¢â‚¬Â¢ Converged")
+                    print(f"  • Converged")
                 break
 
         if verbose:
@@ -2219,7 +2219,7 @@ def qudit(d = 2):
     
     For Pd-level systems, generators satisfy:
     - X^d = Z^d = I (power relation)
-    - XZ = Ãâ€° ZX where Ãâ€° = exp(2Ãâ‚¬i/d) (braiding)
+    - XZ = ᵢâ€° ZX where ᵢâ€° = exp(2ᵢâ‚¬i/d) (braiding)
     
     Args:
         d: Dimension of the qudit (d=2 for qubit, d=3 for qutrit, etc.)
@@ -2263,7 +2263,7 @@ class State:
         return self.expect(operator)
     
     def __matmul__(self, other):
-        """Tensor product of states: |ÃË†Ã¢Å¸Â© @ |Ãâ€ Ã¢Å¸Â© = |ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©"""
+        """Tensor product of states: |ᵢË†⟩ @ |ᵢâ€ ⟩ = |ᵢË†⟩ ⊗ |ᵢâ€ ⟩"""
         if isinstance(other, State):
             # Both are states
             if isinstance(self, TensorState):
@@ -2309,7 +2309,7 @@ class State:
             return self.__matmul__(other)
     
 class EigenState(State):
-    """Eigenstate of an observable: |ÃŽÂ»Ã¢Å¸Â© such that A|ÃŽÂ»Ã¢Å¸Â© = ÃŽÂ»|ÃŽÂ»Ã¢Å¸Â©.
+    """Eigenstate of an observable: |λ⟩ such that A|λ⟩ = λ|λ⟩.
     
     Attributes:
         observable: The operator this is an eigenstate of
@@ -2349,7 +2349,7 @@ class EigenState(State):
 
         if isinstance(op, Projector):
             if self.observable == op.base_operator:
-                # Duality: Ã¢Å¸Â¨char(A,j) | proj(A,k) | char(A,j)Ã¢Å¸Â© = ÃŽÂ´_{jk}
+                # Duality: ⟨char(A,j) | proj(A,k) | char(A,j)⟩ = δ_{jk}
                 if self.index == op.eigenspace_index:
                     return 1.0
                 else:
@@ -2422,7 +2422,7 @@ class EigenState(State):
         return self.expect(operator)
     
 class TensorState(State):
-    """Tensor product of states: |ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©"""
+    """Tensor product of states: |ᵢË†⟩ ⊗ |ᵢâ€ ⟩"""
     
     def __init__(self, states):
         self.states = list(states)
@@ -2484,19 +2484,19 @@ class TensorState(State):
     def __str__(self):
         """Display as tensor product."""
         state_strs = [str(s) for s in self.states]
-        return " Ã¢Å â€” ".join(state_strs)
+        return " ⊗ ".join(state_strs)
     
     def __repr__(self):
         """Display representation."""
         return f"TensorState({', '.join(str(s) for s in self.states)})"
     
 class ConjugatedState(State):
-    """State transformed by unitary: U << |ÃË†Ã¢Å¸Â©.
+    """State transformed by unitary: U << |ᵢË†⟩.
     
     Implements the Heisenberg picture: instead of transforming the state,
     transform the operators measured against it.
     
-    Property: (U << ÃË†)(A) = ÃË†(UÃ¢â‚¬Â  A U)
+    Property: (U << ᵢË†)(A) = ᵢË†(U† A U)
     
     Attributes:
         unitary: Transformation operator
@@ -2516,14 +2516,10 @@ class ConjugatedState(State):
         self.algebra = unitary.algebra
     
     def expect(self, op, _depth=0):
-        """Compute expectation: Ã¢Å¸Â¨U|ÃË†Ã¢Å¸Â©|A|U|ÃË†Ã¢Å¸Â©Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|UÃ¢â‚¬Â AU|ÃË†Ã¢Å¸Â©"""
+        """Compute expectation: ⟨U|ᵢË†⟩|A|U|ᵢË†⟩⟩ = ⟨ᵢË†|U†AU|ᵢË†⟩"""
         if _depth > 10:
             return 0.0
         
-        
-        # Expand projectors to algebraic form first
-        if isinstance(op, Projector):
-            op = op.expand()
         # Transform operator instead of state
         transformed_op = self.unitary.conj_op(op)
         transformed_op_norm = transformed_op.normalize()
@@ -2556,7 +2552,7 @@ class MixedState(State):
         self.components = components
     
     def __call__(self, operator):
-        """Expectation value: Tr(Ã A) = Ã¢Ë†'_i p_i Ã¢Å¸Â¨psi_i|A|psi_iÃ¢Å¸Â©"""
+        """Expectation value: Tr(ᵢ A) = ᵢË†'_i p_i ⟨psi_i|A|psi_i⟩"""
         return sum(prob * state(operator) 
                    for prob, state in self.components)
     
@@ -2590,13 +2586,13 @@ class OpChannel:
     """Quantum channel as a completely positive map on operators.
     
     Given Kraus operators {K_i}, implements the superoperator:
-        E(A) = Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â 
+        E(A) = ∑ᵢ Kᵢ A Kᵢ†
     
     Channels are:
-    - Linear: E(ÃŽÂ±A + ÃŽÂ²B) = ÃŽÂ±E(A) + ÃŽÂ²E(B)
+    - Linear: E(ₖ±A + βB) = ₖ±E(A) + βE(B)
     - Completely positive (CP)
-    - Trace preserving (if Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢ = I)
-    - Unital (if Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢KÃ¡ÂµÂ¢Ã¢â‚¬Â  = I)
+    - Trace preserving (if ∑ᵢ Kᵢ†Kᵢ = I)
+    - Unital (if ∑ᵢ KᵢKᵢ† = I)
     
     Attributes:
         kraus_ops: List of Kraus operators
@@ -2614,7 +2610,7 @@ class OpChannel:
             raise ValueError("Channel must have at least one Kraus operator")
     
     def __call__(self, operator):
-        """Apply channel to operator: E(A) = Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â 
+        """Apply channel to operator: E(A) = ∑ᵢ Kᵢ A Kᵢ†
         
         Args:
             operator: YawOperator to transform
@@ -2625,7 +2621,7 @@ class OpChannel:
         result = None
         
         for K in self.kraus_ops:
-            # Apply Kraus operator: KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â 
+            # Apply Kraus operator: Kᵢ A Kᵢ†
             term = K.conj_op(operator)  # K >> A
             
             if result is None:
@@ -2654,7 +2650,7 @@ class OpChannel:
         return self(operator)
     
     def __mul__(self, other):
-        """Compose channels: (EÃ¢â€šÂ Ã¢Ë†Ëœ EÃ¢â€šâ€š)(A) = EÃ¢â€šÂ(EÃ¢â€šâ€š(A))
+        """Compose channels: (Eᵢâ€š ∘ E₂)(A) = Eᵢâ€š(E₂(A))
         
         Args:
             other: Another OpChannel
@@ -2667,7 +2663,7 @@ class OpChannel:
         raise TypeError(f"Cannot compose OpChannel with {type(other)}")
     
     def is_trace_preserving(self):
-        """Check if channel is trace preserving: Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢ = I
+        """Check if channel is trace preserving: ∑ᵢ Kᵢ†Kᵢ = I
         
         Returns:
             YawOperator (should normalize to I if TP)
@@ -2682,7 +2678,7 @@ class OpChannel:
         return result
     
     def is_unital(self):
-        """Check if channel is unital: Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢KÃ¡ÂµÂ¢Ã¢â‚¬Â  = I
+        """Check if channel is unital: ∑ᵢ KᵢKᵢ† = I
         
         Returns:
             YawOperator (should normalize to I if unital)
@@ -2703,7 +2699,7 @@ class OpChannel:
         return f"OpChannel(kraus_ops={self.kraus_ops})"
 
 class ComposedChannel(OpChannel):
-    """Composition of two channels: (EÃ¢â€šÂ Ã¢Ë†Ëœ EÃ¢â€šâ€š)(A) = EÃ¢â€šÂ(EÃ¢â€šâ€š(A))"""
+    """Composition of two channels: (Eᵢâ€š ∘ E₂)(A) = Eᵢâ€š(E₂(A))"""
     
     def __init__(self, first, second):
         """Compose two channels.
@@ -2721,7 +2717,7 @@ class ComposedChannel(OpChannel):
     def kraus_ops(self):
         """Lazy computation of composed Kraus operators."""
         if self._kraus_ops is None:
-            # EÃ¢â€šÂÃ¢Ë†ËœEÃ¢â€šâ€š has Kraus ops {KÃ¡ÂµÂ¢Ã¢ÂÂ½Ã‚Â¹Ã¢ÂÂ¾KÃ¢Â±Â¼Ã¢ÂÂ½Ã‚Â²Ã¢ÂÂ¾}
+            # Eᵢâ€š∘E₂ has Kraus ops {Kᵢᵢ½₁ᵢ¾K₁ᵢ½₂ᵢ¾}
             composed = []
             for K1 in self.first.kraus_ops:
                 for K2 in self.second.kraus_ops:
@@ -2734,7 +2730,7 @@ class ComposedChannel(OpChannel):
         return self.first(self.second(operator))
     
     def __str__(self):
-        return f"({self.first} Ã¢Ë†Ëœ {self.second})"
+        return f"({self.first} ∘ {self.second})"
 
 def opChannel(kraus_ops):
     """Create operator channel from Kraus operators.
@@ -2759,9 +2755,9 @@ class StChannel:
     """Quantum channel acting on states (dual to OpChannel).
     
     Given Kraus operators {K_i}, transforms states via:
-        E*(|ÃË†Ã¢Å¸Â©)(A) = Ã¢Å¸Â¨ÃË†|E(A)|ÃË†Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|Ã¢Ë†â€˜Ã¡ÂµÂ¢ KÃ¡ÂµÂ¢ A KÃ¡ÂµÂ¢Ã¢â‚¬Â |ÃË†Ã¢Å¸Â©
+        E*(|ᵢË†⟩)(A) = ⟨ᵢË†|E(A)|ᵢË†⟩ = ⟨ᵢË†|∑ᵢ Kᵢ A Kᵢ†|ᵢË†⟩
     
-    This is the SchrÃƒÂ¶dinger picture: states evolve, operators fixed.
+    This is the Schrödinger picture: states evolve, operators fixed.
     Dual to OpChannel (Heisenberg picture).
     
     Attributes:
@@ -2784,7 +2780,7 @@ class StChannel:
         self.op_channel = OpChannel(kraus_ops)
     
     def __call__(self, state):
-        """Apply channel to state: E*(|ÃË†Ã¢Å¸Â©)
+        """Apply channel to state: E*(|ᵢË†⟩)
         
         Args:
             state: State to transform
@@ -2813,7 +2809,7 @@ class StChannel:
         return self(state)
     
     def __mul__(self, other):
-        """Compose state channels: (EÃ¢â€šÂ Ã¢Ë†Ëœ EÃ¢â€šâ€š)*(|ÃË†Ã¢Å¸Â©) = EÃ¢â€šÂ*(EÃ¢â€šâ€š*(|ÃË†Ã¢Å¸Â©))
+        """Compose state channels: (Eᵢâ€š ∘ E₂)*(|ᵢË†⟩) = Eᵢâ€š*(E₂*(|ᵢË†⟩))
         
         Args:
             other: Another StChannel
@@ -2834,7 +2830,7 @@ class StChannel:
 class TransformedState(State):
     """State transformed by a quantum channel.
     
-    Implements: E*(|ÃË†Ã¢Å¸Â©)(A) = Ã¢Å¸Â¨ÃË†|E(A)|ÃË†Ã¢Å¸Â©
+    Implements: E*(|ᵢË†⟩)(A) = ⟨ᵢË†|E(A)|ᵢË†⟩
     
     This is the key duality: to measure A on the transformed state
     is the same as measuring E(A) on the original state.
@@ -2855,7 +2851,7 @@ class TransformedState(State):
         self.state = state
     
     def expect(self, operator, _depth=0):
-        """Compute expectation: Ã¢Å¸Â¨E*(ÃË†)|A|E*(ÃË†)Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|E(A)|ÃË†Ã¢Å¸Â©
+        """Compute expectation: ⟨E*(ᵢË†)|A|E*(ᵢË†)⟩ = ⟨ᵢË†|E(A)|ᵢË†⟩
         
         Args:
             operator: Operator to measure
@@ -2923,7 +2919,7 @@ class ComposedStChannel(StChannel):
         return TransformedState(self, state)
     
     def __str__(self):
-        return f"({self.first} Ã¢Ë†Ëœ {self.second})"
+        return f"({self.first} ∘ {self.second})"
 
 def stChannel(kraus_ops):
     """Create state channel from Kraus operators.
@@ -2941,7 +2937,7 @@ def stChannel(kraus_ops):
         >>> K1 = (I - Z) / 2
         >>> channel = stChannel([K0, K1])
         >>> psi0 = char(Z, 0)
-        >>> channel(psi0)  # Dephasing channel applied to |0Ã¢Å¸Â©
+        >>> channel(psi0)  # Dephasing channel applied to |0⟩
     """
     return StChannel(kraus_ops)
 
@@ -2950,12 +2946,12 @@ def stChannel(kraus_ops):
 # ============================================================================
 
 class CollapsedState(State):
-    """State after measurement collapse: K|ÃË†Ã¢Å¸Â©/Ã¢Ë†Å¡p normalized as functional.
+    """State after measurement collapse: K|ᵢË†⟩/ᵢË†Å¡p normalized as functional.
     
-    For density matrix semantics: ÃÂ' = (KÃÂKÃ¢â‚¬Â )/p where p = Tr(KÃÂKÃ¢â‚¬Â )
+    For density matrix semantics: ᵢ' = (KᵢK†)/p where p = Tr(KᵢK†)
     
     Since states are functionals:
-        ÃË†'(A) = ÃË†(KÃ¢â‚¬Â AK) / p
+        ᵢË†'(A) = ᵢË†(K†AK) / p
     
     Attributes:
         kraus_op: Kraus operator that collapsed the state
@@ -2968,8 +2964,8 @@ class CollapsedState(State):
         
         Args:
             kraus_op: Kraus operator K
-            state: Original state |ÃË†Ã¢Å¸Â©
-            probability: p = Ã¢Å¸Â¨ÃË†|KÃ¢â‚¬Â K|ÃË†Ã¢Å¸Â©
+            state: Original state |ᵢË†⟩
+            probability: p = ⟨ᵢË†|K†K|ᵢË†⟩
         """
         self.kraus_op = kraus_op
         self.state = state
@@ -2979,7 +2975,7 @@ class CollapsedState(State):
         #    raise ValueError("Cannot collapse with zero probability")
     
     def expect(self, operator, _depth=0):
-        """Compute expectation: Ã¢Å¸Â¨ÃË†'|A|ÃË†'Ã¢Å¸Â© = Ã¢Å¸Â¨ÃË†|KÃ¢â‚¬Â AK|ÃË†Ã¢Å¸Â© / p
+        """Compute expectation: ⟨ᵢË†'|A|ᵢË†'⟩ = ⟨ᵢË†|K†AK|ᵢË†⟩ / p
         
         Args:
             operator: Operator to measure
@@ -2995,7 +2991,7 @@ class CollapsedState(State):
         if self.probability < 1e-10:
             return 0.0  # Convention: zero-probability branch has zero expectation
         
-        # Transform operator: KÃ¢â‚¬Â  A K
+        # Transform operator: K† A K
         transformed = self.kraus_op.conj_op(operator)
         
         # Normalize
@@ -3021,7 +3017,7 @@ class OpMeasurement:
     Usage:
         >>> measure = opMeasure([K0, K1], state, seed=42)
         >>> updated_op, prob = measure(A)
-        # Returns (KÃ¡ÂµÂ¢ >> A, p(i)) for random outcome i
+        # Returns (Kᵢ >> A, p(i)) for random outcome i
     
     Attributes:
         kraus_ops: List of Kraus operators
@@ -3047,23 +3043,18 @@ class OpMeasurement:
     def __call__(self, operator):
         """Sample measurement outcome and return transformed operator.
         
-        Samples outcome i with probability p(i) = Ã¢Å¸Â¨ÃË†|KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢|ÃË†Ã¢Å¸Â©
+        Samples outcome i with probability p(i) = ⟨ᵢË†|Kᵢ†Kᵢ|ᵢË†⟩
         
         Args:
             operator: Operator to transform
             
         Returns:
-            (KÃ¡ÂµÂ¢ >> operator, p(i))
+            (Kᵢ >> operator, p(i))
         """
         # Compute probabilities
         probs = []
         for K in self.kraus_ops:
-            # Expand projectors first for correct probability calculation
-            if isinstance(K, Projector):
-                K_expanded = K.expand()
-                prob = self.state.expect(K_expanded)
-            else:
-                prob = self.state.expect(K.adjoint() * K)
+            prob = self.state.expect(K.adjoint() * K)
             # Convert to float, handling complex numbers
             prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
             probs.append(max(0.0, prob_float))  # Ensure non-negative
@@ -3079,7 +3070,7 @@ class OpMeasurement:
             random.seed(self.seed)
         i = random.choices(range(len(self.kraus_ops)), weights=probs)[0]
         
-        # Apply Kraus operator: KÃ¡ÂµÂ¢ >> A = KÃ¡ÂµÂ¢Ã¢â‚¬Â  A KÃ¡ÂµÂ¢
+        # Apply Kraus operator: Kᵢ >> A = Kᵢ† A Kᵢ
         K_i = self.kraus_ops[i]
         transformed = K_i.conj_op(operator)
         
@@ -3092,7 +3083,7 @@ class OpMeasurement:
         return f"OpMeasurement(kraus_ops={len(self.kraus_ops)}, seed={self.seed})"
 
 class StMeasurement:
-    """Measurement device for states (SchrÃƒÂ¶dinger picture).
+    """Measurement device for states (Schrödinger picture).
     
     Encapsulates a measurement with Kraus operators and state.
     Each call samples a random outcome according to Born rule.
@@ -3100,7 +3091,7 @@ class StMeasurement:
     Usage:
         >>> measure = stMeasure([K0, K1], state, seed=42)
         >>> collapsed_state, prob = measure()
-        # Returns (KÃ¡ÂµÂ¢ << state / p(i), p(i)) for random outcome i
+        # Returns (Kᵢ << state / p(i), p(i)) for random outcome i
     
     Attributes:
         kraus_ops: List of Kraus operators
@@ -3126,8 +3117,8 @@ class StMeasurement:
     def __call__(self):
         """Sample measurement outcome and return collapsed state.
         
-        Samples outcome i with probability p(i) = Ã¢Å¸Â¨ÃË†|KÃ¡ÂµÂ¢Ã¢â‚¬Â KÃ¡ÂµÂ¢|ÃË†Ã¢Å¸Â©
-        Returns collapsed state: ÃË†'(A) = ÃË†(KÃ¡ÂµÂ¢Ã¢â‚¬Â AKÃ¡ÂµÂ¢) / p(i)
+        Samples outcome i with probability p(i) = ⟨ᵢË†|Kᵢ†Kᵢ|ᵢË†⟩
+        Returns collapsed state: ᵢË†'(A) = ᵢË†(Kᵢ†AKᵢ) / p(i)
         
         Returns:
             (collapsed_state, p(i))
@@ -3151,7 +3142,7 @@ class StMeasurement:
             random.seed(self.seed)
         i = random.choices(range(len(self.kraus_ops)), weights=probs)[0]
         
-        # Collapse state: KÃ¡ÂµÂ¢ << state, normalized by p(i)
+        # Collapse state: Kᵢ << state, normalized by p(i)
         K_i = self.kraus_ops[i]
         collapsed = CollapsedState(K_i, self.state, probs[i])
         
@@ -3175,8 +3166,8 @@ def opMeasure(kraus_ops, state, seed=None):
         OpMeasurement object (callable on operators)
         
     Example:
-        >>> K0 = (I + Z) / 2  # Project to |0Ã¢Å¸Â©
-        >>> K1 = (I - Z) / 2  # Project to |1Ã¢Å¸Â©
+        >>> K0 = (I + Z) / 2  # Project to |0⟩
+        >>> K1 = (I - Z) / 2  # Project to |1⟩
         >>> measure = opMeasure([K0, K1], psi0, seed=42)
         >>> updated_X, prob = measure(X)
     """
@@ -3194,8 +3185,8 @@ def stMeasure(kraus_ops, state, seed=None):
         StMeasurement object (callable, returns collapsed state)
         
     Example:
-        >>> K0 = (I + Z) / 2  # Project to |0Ã¢Å¸Â©
-        >>> K1 = (I - Z) / 2  # Project to |1Ã¢Å¸Â©
+        >>> K0 = (I + Z) / 2  # Project to |0⟩
+        >>> K1 = (I - Z) / 2  # Project to |1⟩
         >>> measure = stMeasure([K0, K1], psi0, seed=42)
         >>> collapsed_state, prob = measure()
     """
@@ -3214,7 +3205,7 @@ class OpBranches:
     Usage:
         >>> branches = opBranches([K0, K1], state)
         >>> outcomes = branches(A)
-        # Returns [(KÃ¢â€šâ‚¬ >> A, p(0)), (KÃ¢â€šÂ >> A, p(1))]
+        # Returns [(K₀ >> A, p(0)), (Kᵢâ€š >> A, p(1))]
     
     Attributes:
         kraus_ops: List of Kraus operators
@@ -3264,7 +3255,7 @@ class OpBranches:
         return f"OpBranches(kraus_ops={len(self.kraus_ops)})"
 
 class StBranches:
-    """All measurement branches in state picture (SchrÃƒÂ¶dinger).
+    """All measurement branches in state picture (Schrödinger).
     
     Returns complete list of all possible measurement outcomes with
     their probabilities. No sampling - shows full ensemble.
@@ -3272,7 +3263,7 @@ class StBranches:
     Usage:
         >>> branches = stBranches([K0, K1], state)
         >>> outcomes = branches()
-        # Returns [(KÃ¢â€šâ‚¬ << state / p(0), p(0)), (KÃ¢â€šÂ << state / p(1), p(1))]
+        # Returns [(K₀ << state / p(0), p(0)), (Kᵢâ€š << state / p(1), p(1))]
     
     Attributes:
         kraus_ops: List of Kraus operators
@@ -3301,12 +3292,7 @@ class StBranches:
         branches = []
         
         for K in self.kraus_ops:
-            # Expand projectors first for correct probability calculation
-            if isinstance(K, Projector):
-                K_expanded = K.expand()
-                prob = self.state.expect(K_expanded)
-            else:
-                prob = self.state.expect(K.adjoint() * K)
+            prob = self.state.expect(K.adjoint() * K)
             prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
             prob_float = max(0.0, prob_float)  # Ensure non-negative
             
@@ -3343,7 +3329,7 @@ def opBranches(kraus_ops, state):
         >>> K1 = (I - Z) / 2
         >>> branches = opBranches([K0, K1], psi0)
         >>> outcomes = branches(X)
-        # Returns [(KÃ¢â€šâ‚¬ >> X, 1.0), (KÃ¢â€šÂ >> X, 0.0)]
+        # Returns [(K₀ >> X, 1.0), (Kᵢâ€š >> X, 0.0)]
     """
     return OpBranches(kraus_ops, state)
 
@@ -3364,14 +3350,14 @@ def stBranches(kraus_ops, state):
         >>> K1 = (I - Z) / 2
         >>> branches = stBranches([K0, K1], psi0)
         >>> outcomes = branches()
-        # Returns [(collapsedÃ¢â€šâ‚¬, 1.0), (collapsedÃ¢â€šÂ, 0.0)]
+        # Returns [(collapsed₀, 1.0), (collapsedᵢâ€š, 0.0)]
     """
     return StBranches(kraus_ops, state)
 
 def compose_st_branches(new_kraus_ops, branch_list):
     """Compose measurements: apply new measurement to each branch.
     
-    Branches grow exponentially: n branches Ãƒâ€” m outcomes = n*m branches.
+    Branches grow exponentially: n branches ₐâ€” m outcomes = n*m branches.
     
     Args:
         new_kraus_ops: List of Kraus operators for second measurement
@@ -3425,12 +3411,12 @@ class QFT:
     
     The QFT is defined purely algebraically by its action on generators:
         qft(X, Z) >> Z = X
-        qft(X, Z) >> X = ZÃ¢â‚¬Â 
+        qft(X, Z) >> X = Z†
     
     This extends to arbitrary operators by the automorphism property:
         qft >> (AB) = (qft >> A)(qft >> B)
     
-    For qudits with pow(d), we use ZÃ¢â‚¬Â  = Z^(d-1).
+    For qudits with pow(d), we use Z† = Z^(d-1).
     
     Attributes:
         gen_x: X generator (shift operator)
@@ -3468,16 +3454,16 @@ class QFT:
         self.x_expr = gen_x._expr
         self.z_expr = gen_z._expr
         
-        # Compute ZÃ¢â‚¬Â  (conjugate of Z)
+        # Compute Z† (conjugate of Z)
         if algebra and algebra.power_mod:
-            # For pow(d): ZÃ¢â‚¬Â  = Z^(d-1)
+            # For pow(d): Z† = Z^(d-1)
             d = algebra.power_mod
             self.z_dag_expr = self.z_expr ** (d - 1)
         else:
-            # Generic: ZÃ¢â‚¬Â 
+            # Generic: Z†
             self.z_dag_expr = Dagger(self.z_expr)
         
-        # Similarly for XÃ¢â‚¬Â 
+        # Similarly for X†
         if algebra and algebra.power_mod:
             d = algebra.power_mod
             self.x_dag_expr = self.x_expr ** (d - 1)
@@ -3485,11 +3471,11 @@ class QFT:
             self.x_dag_expr = Dagger(self.x_expr)
     
     def conj_op(self, operator):
-        """Apply QFT via conjugation: W >> A = W A WÃ¢â‚¬Â 
+        """Apply QFT via conjugation: W >> A = W A W†
         
         Uses the defining relations:
             W >> Z = X
-            W >> X = ZÃ¢â‚¬Â 
+            W >> X = Z†
         
         Args:
             operator: Operator to transform
@@ -3513,11 +3499,11 @@ class QFT:
         """Recursively transform expression using QFT rules.
         
         Transformation rules:
-            Z Ã¢â€ â€™ X
-            X Ã¢â€ â€™ ZÃ¢â‚¬Â 
-            I Ã¢â€ â€™ I
-            AB Ã¢â€ â€™ (W >> A)(W >> B)  (automorphism)
-            A + B Ã¢â€ â€™ (W >> A) + (W >> B)  (linearity)
+            Z ↦ X
+            X ↦ Z†
+            I ↦ I
+            AB ↦ (W >> A)(W >> B)  (automorphism)
+            A + B ↦ (W >> A) + (W >> B)  (linearity)
         """
         from sympy import symbols, Mul, Add, Pow
         
@@ -3531,17 +3517,17 @@ class QFT:
         # Daggers
         if isinstance(expr, Dagger):
             if expr.args[0] == self.z_expr:
-                # ZÃ¢â‚¬Â  Ã¢â€ â€™ XÃ¢â‚¬Â 
+                # Z† ↦ X†
                 return self.x_dag_expr
             if expr.args[0] == self.x_expr:
-                # XÃ¢â‚¬Â  Ã¢â€ â€™ Z
+                # X† ↦ Z
                 return self.z_expr
         
         # Identity
         if self.algebra and expr == self.algebra.I._expr:
             return expr
         
-        # Powers: X^n Ã¢â€ â€™ (ZÃ¢â‚¬Â )^n, Z^n Ã¢â€ â€™ X^n
+        # Powers: X^n ↦ (Z†)^n, Z^n ↦ X^n
         if isinstance(expr, Pow):
             base = expr.args[0]
             exp = expr.args[1]
@@ -3572,10 +3558,10 @@ class QFT:
         return self.conj_op(operator)
     
     def adjoint(self):
-        """QFT is self-adjoint (up to phase): WÃ¢â‚¬Â  = W^(d-1)
+        """QFT is self-adjoint (up to phase): W† = W^(d-1)
         
-        For qubits (d=2): WÃ¢â‚¬Â  = W
-        For general qudits: W^d = I, so WÃ¢â‚¬Â  = W^(d-1)
+        For qubits (d=2): W† = W
+        For general qudits: W^d = I, so W† = W^(d-1)
         """
         if self.algebra and self.algebra.power_mod:
             d = self.algebra.power_mod
@@ -3597,9 +3583,9 @@ def qft(gen_x, gen_z):
     
     The QFT is defined algebraically by:
         qft(X, Z) >> Z = X
-        qft(X, Z) >> X = ZÃ¢â‚¬Â 
+        qft(X, Z) >> X = Z†
     
-    For qudits with X^d = Z^d = I, we have ZÃ¢â‚¬Â  = Z^(d-1).
+    For qudits with X^d = Z^d = I, we have Z† = Z^(d-1).
     
     Args:
         gen_x: X generator (shift operator)
@@ -3709,7 +3695,7 @@ class Projector(YawOperator):
     """Projector onto eigenspace: proj(A, k)
     
     Special operator that knows its duality with eigenstates:
-        proj(A, k) | char(A, j) = ÃŽÂ´_{kj}
+        proj(A, k) | char(A, j) = δ_{kj}
     """
     
     def __init__(self, operator, eigenspace_index, algebra=None):
@@ -3735,14 +3721,14 @@ class Projector(YawOperator):
         return self._algebra
     
     def expect(self, state, _depth=0):
-        """Expectation value: Ã¢Å¸Â¨state | proj | stateÃ¢Å¸Â©
+        """Expectation value: ⟨state | proj | state⟩
         
-        For eigenstates: proj(A, k) | char(A, j) = ÃŽÂ´_{kj}
+        For eigenstates: proj(A, k) | char(A, j) = δ_{kj}
         """
         if isinstance(state, EigenState):
             # Check if state is an eigenstate of the same operator
             if state.operator == self.base_operator:
-                # Orthogonality: proj(A, k) | char(A, j) = ÃŽÂ´_{kj}
+                # Orthogonality: proj(A, k) | char(A, j) = δ_{kj}
                 if state.eigenspace_index == self.eigenspace_index:
                     return 1.0
                 else:
@@ -3757,7 +3743,7 @@ class Projector(YawOperator):
     def __lshift__(self, state):
         """Apply projector to state: proj << psi
         
-        For eigenstates: proj(A, k) << char(A, j) = ÃŽÂ´_{kj} char(A, j)
+        For eigenstates: proj(A, k) << char(A, j) = δ_{kj} char(A, j)
         """
         if isinstance(state, EigenState):
             # *** FIXED: Use state.observable and state.index ***
@@ -3806,7 +3792,7 @@ def ctrl(control_op, controlled_ops):
     """Create controlled operation using projector decomposition.
     
     For control operator A with pow(d), constructs:
-        ÃŽÂ£_k proj(A, k) Ã¢Å â€” controlled_ops[k]
+        Σ_k proj(A, k) ⊗ controlled_ops[k]
     
     This implements conditional application: if A is in eigenspace k,
     apply controlled_ops[k] to the target system.
@@ -3839,7 +3825,7 @@ def ctrl(control_op, controlled_ops):
         raise ValueError(f"Expected {d} controlled operators for dimension-{d} "
                         f"control, got {len(controlled_ops)}")
     
-    # Build sum: ÃŽÂ£_k proj(control, k) Ã¢Å â€” controlled_ops[k]
+    # Build sum: Σ_k proj(control, k) ⊗ controlled_ops[k]
     result = None
     
     for k in range(d):
@@ -3864,7 +3850,7 @@ def ctrl_single(control_op, k, target_op):
     Applies target_op when control is in eigenspace k, identity otherwise.
     
     Constructs:
-        proj(control, k) Ã¢Å â€” target_op + ÃŽÂ£_{jÃ¢â€°Â k} proj(control, j) Ã¢Å â€” I
+        proj(control, k) ⊗ target_op + Σ_{j≠k} proj(control, j) ⊗ I
     
     Args:
         control_op: Control operator
@@ -3875,7 +3861,7 @@ def ctrl_single(control_op, k, target_op):
         Controlled operation
         
     Example:
-        >>> # Apply X only when Z is in |1Ã¢Å¸Â© state
+        >>> # Apply X only when Z is in |1⟩ state
         >>> CX_on_1 = ctrl_single(Z, 1, X)
     """
     if not hasattr(control_op, 'algebra') or control_op.algebra is None:
@@ -3907,8 +3893,8 @@ def ctrl_single(control_op, k, target_op):
 def tensor(*factors):
     """Create tensor product of operators or states.
     
-    For operators: A Ã¢Å â€” B
-    For states: |ÃË†Ã¢Å¸Â© Ã¢Å â€” |Ãâ€ Ã¢Å¸Â©
+    For operators: A ⊗ B
+    For states: |ᵢË†⟩ ⊗ |ᵢâ€ ⟩
     Mixed tensors not currently supported.
     
     Args:
@@ -3945,7 +3931,7 @@ def tensor(*factors):
         raise TypeError("Cannot mix operators and states in tensor product")
     
 def tensor_power(op, n):
-    """Create n-fold tensor product: tensor_power(X, 3) = XÃ¢Å â€”XÃ¢Å â€”X.
+    """Create n-fold tensor product: tensor_power(X, 3) = X⊗X⊗X.
     
     Args:
         op: Operator to repeat
@@ -3974,7 +3960,7 @@ def char(observable: YawOperator, index: int) -> State:
     return EigenState(observable, index, observable.algebra)
 
 def conj_op(U, A):
-    """Operator conjugation: U >> A = UÃ¢â‚¬Â  A U.
+    """Operator conjugation: U >> A = U† A U.
     
     Transforms operator A by unitary U.
     
@@ -3988,7 +3974,7 @@ def conj_op(U, A):
     return U.conj_op(A)
 
 def conj_state(U, state):
-    """State conjugation: U << |ÃË†Ã¢Å¸Â©.
+    """State conjugation: U << |ᵢË†⟩.
     
     Transforms state by unitary U.
     
