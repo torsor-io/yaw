@@ -32,7 +32,6 @@ Someone had too much time on their hands.
 ## Table of Contents
 - [Quick start](#quick-start)
 - [Core concepts](#core-concepts)
-- [Language components](#language-components)
 - [Codebase](#codebase)
 - [Details](#details)
 - [Contact](#contact)
