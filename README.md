@@ -183,7 +183,7 @@ expr ! pow(3), herm                      # Local context (temporary relations)
 - Generates readable, documented code
 - Handles special syntax (commutators, subscripts, comprehensions)
 
-### Status and roadmap
+### Status and Roadmap
 
 **Current: v0.1.0 (Initial Public Release)**
 
@@ -228,17 +228,9 @@ We welcome contributions! Areas where you can help:
 3. Submit a pull request
 4. We'll review and provide feedback
 
-## Philosophy
+## Details
 
-`yaw` embodies several principles:
-
-- **Algebra first**: The mathematical structure *is* the program
-- **Hardware agnostic**: Write for the abstraction, compile to any backend
-- **Fault-tolerant native**: Designed for error-correction integration, not NISQ
-- **Composability**: Small pieces combine naturally
-- **Joy-coded**: If it's not beautiful, it's not done
-
-## References
+### References
 
 - [The Structure and Interpretation of Quantum Programs I: Foundations](https://arxiv.org/abs/2509.04527) (2025), David Wakeham. A detailed introduction to the mathematical foundations of `yaw`.
 -
@@ -259,7 +251,7 @@ If you use yaw in research, please cite:
 }
 ```
 
-## License
+### License
 
 Apache 2.0 - see [LICENSE](LICENSE).
 
