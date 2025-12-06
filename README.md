@@ -73,11 +73,16 @@ Finally, if you prefer, you can work with `yaw` as a package in
 ```python
 from yaw import *
 
-pauli = Algebra(gens=['X', 'Z'], rels=['herm', 'unit', 'anti'])
-X, Z = pauli.X, pauli.Z
-print((X * Z * X).normalize())  # -Z
-```
+pauli = Algebra(gens=['X', 'Z'], rels=['herm', 'unit', 'anti', 'pow(2)'])
+H = (pauli.X + pauli.Z) / sqrt(2)
 
+print((H >> pauli.Z).normalize())  # X
+
+psi0 = char(pauli.Z, 0)
+print(gnsMat(psi0, H))
+# [[ 0.707  0.707]
+#  [ 0.707 -0.707]]
+```
 ## Core Concepts
 
 ### Algebras Define Systems
