@@ -215,20 +215,20 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 
 ### Roadmap
 
-**v0.2.0 (Q1 2026)** - *Multi-qubit robustness*
+**v0.2.0 (Q1 2026)**: *Multi-qubit robustness*
 - Tensor product conjugation (`TensorProduct.__rshift__`)
 - Improved superposition handling for controlled operations
 - Gate teleportation example (algebraically natural)
 - Additional examples: Bell states, Grover, basic QEC
 - Comprehensive test suite
 
-**v0.3.0 (2027)** - *Oscillators and advanced codes*
+**v0.3.0 (2027)**: *Oscillators and advanced codes*
 - Oscillator algebra (continuous variables)
 - Surface codes and topological QEC
 - Compiler optimization passes
 - Stabilizer code automation
 
-**v0.4.0 (2028)** - *λix integration*
+**v0.4.0 (2028)**: *λix integration*
 - Hardware-agnostic backend (λix)
 - Type system for quantum programs
 - Module/import system
