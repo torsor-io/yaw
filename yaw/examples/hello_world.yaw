@@ -17,7 +17,7 @@ print("⟨X⟩ =", X | psi_plus)               # expectation should be 1.0
 print("⟨Z⟩ =", Z | psi_plus)               # expectation should be 0.0
 
 H_matrix = gnsMat(psi0, H)                 # represent H in Hilbert space associated with |0⟩
-print("\nHadamard matrix:\n", H_matrix)    # should give textbook matrix [[1, 1], [1, -1]]/√2
+print("\nHadamard matrix:\n", H_matrix)    # should give textbook matrix H = [[1, 1], [1, -1]]/√2
 
 vec_plus = gnsVec(psi0, H)                 # represent |+⟩ = H|0⟩ as a vector in the Hilbert space
-print("\n|+⟩ state vector:", vec_plus)     # should give textbook (|0⟩ + |1⟩)/√2
+print("\n|+⟩ state vector:", vec_plus)     # should give textbook answer |+⟩ = (|0⟩ + |1⟩)/√2
