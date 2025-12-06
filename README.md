@@ -70,7 +70,7 @@ yaw> H >> Z
 X
 ```
 
-**2. Compile to Python**
+**2. Compile to `Python`**
 
 You can use the same syntax in `.yaw` files and compile to `Python`
 using `y2py.py`:
@@ -80,7 +80,7 @@ python -m yaw.y2py protocol.yaw -o protocol.py
 python protocol.py
 ```
 
-**3. Import as Library**
+**3. Import as library**
 Finally, if you prefer, you can work with `yaw` as a package in
 `Python`. The syntax is a little clunkier, but essentially the same:
 
@@ -95,9 +95,9 @@ gnsMat(char(pauli.Z, 0), H)       # Hadamard matrix (concrete)
 # [[ 0.707  0.707]
 #  [ 0.707 -0.707]]
 ```
-## Core Concepts
+## Core concepts
 
-### Algebras Define Systems
+### Algebras define systems
 
 We define algebras from "scratch" using generators and relations, e.g.
 
@@ -112,7 +112,7 @@ $alg = <X, Z | herm, unit, pow(3), braid(exp(2*pi*I/3))>
 
 Here, `$alg` is a global algebra variable, hence the `$`.
 
-### States are Functionals
+### States are functionals
 
 If we view operators as random variables, states are *expectation functionals*. Eigenstates become expectations for which an operator has zero variance.
 
@@ -128,7 +128,7 @@ psi0.expect(Z)         # Python syntax
 
 The vertical line `|` should recall conditional probability, which put differently, assigns *context*. Here, the state is itself a context in which to evaluate the operator. This is also like the pipe operator from Unix. Snap!
 
-### Fundamental Combinators
+### Fundamental combinators
 
 We can combine operators, states, and channels in various ways:
 
@@ -140,7 +140,7 @@ A | psi         # Evaluate A in state ψ: ψ(A)
 A | C_1 | C_2   # Evaluate A in channel C_1, then C_2, etc: C_2[C_1[A]]
 ```
 
-### Measurement: Four Interfaces
+### Measurement: four interfaces
 
 Measurement is a tricky notion, since it can mean the average outcome, a random choice over a state-induced distribution, or a branching process where we keep track of all outcomes.
 
@@ -162,7 +162,7 @@ for state, prob in branches():
     print(f"Probability: {prob}")
 ```
 
-### Special Syntax
+### Special syntax
 
 There are a few special, additional pieces of syntax:
 
@@ -171,12 +171,12 @@ There are a few special, additional pieces of syntax:
 {{X, Z}}                                 # Anticommutator
 [P_{k} = proj(Z, k) for k in range(2)]   # Create P_0, P_1
 expr ! pow(3), herm                      # Local context (temporary relations)
-gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vectors
+gnsMat(A), gnsVec(psi)                   # Concrete GNS Hilbert space matrices/vectors
 ```
 
 ## Codebase
 
-### Language Components
+### Language components
 
 `yaw` consists of three integrated tools:
 
