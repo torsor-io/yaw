@@ -106,7 +106,7 @@ gnsMat(char(pauli.Z, 0), H)       # Hadamard matrix (concrete)
 We define algebras from "scratch" using generators and relations, e.g.
 
 ```python
-# Qubit (Pauli algebra)
+# Qubit
 $alg = <X, Z | herm, unit, anti>
 
 # Qutrit
