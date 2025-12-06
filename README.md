@@ -168,7 +168,7 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 
 `yaw` consists of three integrated tools:
 
-`yaw/yaw_prototype.py` - Core library
+`yaw/yaw_prototype.py` - *Core library*
 - Operator algebra with symbolic manipulation
 - States as functionals (+ GNS construction)
 - Quantum channels (Heisenberg and Schrödinger pictures)
@@ -176,14 +176,14 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 - Quantum error correction (encodings as functors)
 - Context management for complex programs
 
-`yaw/yaw_repl.py` - Interactive development
+`yaw/yaw_repl.py` - *Interactive development*
 - Algebra definition: `$alg = <gens | rels>`
 - Subscripted variables: `P_{k}`
 - List comprehensions with assignment
 - Commutator/anticommutator syntax
 - Multi-line statements (for, if, def)
 
-`yaw/yawc.py` - Compiler
+`yaw/yawc.py` - *Compiler*
 - Transforms `.yaw` files to Python
 - Preserves algebraic semantics
 - Generates readable, documented code
