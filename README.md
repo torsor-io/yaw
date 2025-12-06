@@ -227,7 +227,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 **Known limitations:**
 - Tensor product conjugation (e.g., `(H @ I) >> A`) not yet implemented
 - Multi-qubit controlled operations need automated spectral decomposition
-- Quantum error correction codes (defined but not demonstrated)
+- Basic QEC support needs to be finalized
 
 **Examples:**
 - `hello_world.yaw` - Demonstrates core concepts (superposition, measurement, GNS)
