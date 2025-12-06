@@ -206,7 +206,7 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 
 **Known limitations:**
 - Tensor product conjugation (e.g., `(H @ I) >> A`) not yet implemented
-- Multi-qubit controlled operations need superposition handling improvements
+- Multi-qubit controlled operations need automated spectral decomposition
 - Quantum error correction codes (defined but not demonstrated)
 
 **Examples:**
