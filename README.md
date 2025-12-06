@@ -88,10 +88,12 @@ We define algebras from "scratch" using generators and relations, e.g.
 # Qubit (Pauli algebra)
 $alg = <X, Z | herm, unit, anti>
 
-# Qutrit (dimension 3)
+# Qutrit
 $alg = <X, Z | herm, unit, pow(3), braid(exp(2*pi*I/3))>
 
 ```
+
+Here, `$alg` is a global algebra variable, hence the `$`.
 
 ### States are Functionals
 
@@ -107,21 +109,23 @@ Z**2 | psi0            # ⟨Z²⟩ = 1.0 - same as mean squared
 psi0.expect(Z)         # Python syntax
 ```
 
-### Three Fundamental Combinators
+The vertical line `|` should recall conditional probability, which put differently, assigned *context*. Here, the state is itself a context in which to evaluate the operator. This is also like the pipe operator from Unix. Snap!
+
+### Fundamental Combinators
 
 We can combine operators, states, and channels in various ways:
 
 ```python
-A @ B           # Tensor product: A ⊗ B
-U >> A          # Operator conjugation: U† A U (Heisenberg)
-U << psi        # State conjugation: ψ(U† ⋅ U) (Schrödinger)
-A | psi         # Evaluation: substitute A into state ψ, ψ(A)
-A | C_1 | C_2   # Evaluation: substitute A into channel C_1, result into C_2, etc
+A @ B           # Tensor product of operators and states: A ⊗ B
+U >> A          # Operator conjugation: A ↦ U† A U (Heisenberg)
+U << psi        # State conjugation: ψ(⋅) ↦ ψ(U† ⋅ U) (Schrödinger)
+A | psi         # Evaluate A in state ψ: ψ(A)
+A | C_1 | C_2   # Evaluate A in channel C_1, then C_2, etc: C_2[C_1[A]]
 ```
 
 ### Measurement: Four Interfaces
 
-Measurement is a tricky notion, since it can the average outcome, a random choice of state according to the measurement distribution, or a branching process where all outcomes are kept. Infeasible in large examples, but useful for small examples!
+Measurement is a tricky notion, since it can mean the average outcome, a random choice over a state-induced distribution, or a branching process where we keep track of all outcomes.
 
 ```python
 # 1. Expectation values (most common)
@@ -146,10 +150,10 @@ for state, prob in branches():
 There are a few special, additional pieces of syntax:
 
 ```python
-[[X, Z]]                               # Commutator
-{{X, Z}}                               # Anticommutator
-[P_{k} = proj(Z, k) for k in range(2)] # Create P_0, P_1
-expr ! pow(3), herm                    # Local context (temporary relations)
+[[X, Z]]                                 # Commutator
+{{X, Z}}                                 # Anticommutator
+[P_{k} = proj(Z, k) for k in range(2)]   # Create P_0, P_1
+expr ! pow(3), herm                      # Local context (temporary relations)
 ```
 
 ## Language Components
@@ -190,11 +194,6 @@ expr ! pow(3), herm                    # Local context (temporary relations)
 - ✅ Basic quantum error correction
 - ✅ Multi-qudit tensor products
 - ✅ Controlled operations and QFT
-
-**Known limitations:**
-- No oscillators yet
-- Limited compiler optimizations
-- Performance not yet optimized (correctness first)
 
 **Roadmap:**
 
@@ -254,11 +253,11 @@ If you use yaw in research, please cite:
 
 ## License
 
-Apache 2.0 - see [LICENSE](LICENSE)
+Apache 2.0 - see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-yaw builds on foundations from C*-algebra theory (Gelfand, Naimark, Segal), categorical quantum mechanics (Abramsky, Coecke), algebraic QFT (Haag, Kastler), and modern quantum error correction (Gottesman, Kitaev, Preskill).
+`yaw` builds on stable foundations: operator algebras and quantum mechanics (von Neumann, Gelfand, Naimark, Segal, et al.), Boolean digital logic (Leibniz, Boole, Shannon, et al.), quantum error correction (Gottesman, Knill, Laflamme, Poulin, Shor, et al.), and the spirit of Bell Labs.
 
 ## Contact
 
@@ -268,4 +267,4 @@ Torsor Labs
 
 ---
 
-*Made with love, coffee, and Claude.*
+*Made with love, coffee, and assistance from Claude.*
