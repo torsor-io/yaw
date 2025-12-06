@@ -156,7 +156,9 @@ There are a few special, additional pieces of syntax:
 expr ! pow(3), herm                      # Local context (temporary relations)
 ```
 
-## Language Components
+### Codebase
+
+### Language Components
 
 `yaw` consists of three integrated tools:
 
@@ -181,7 +183,7 @@ expr ! pow(3), herm                      # Local context (temporary relations)
 - Generates readable, documented code
 - Handles special syntax (commutators, subscripts, comprehensions)
 
-## Status and roadmap
+### Status and roadmap
 
 **Current: v0.1.0 (Initial Public Release)**
 
@@ -209,7 +211,7 @@ expr ! pow(3), herm                      # Local context (temporary relations)
 - Type system for quantum programs
 - Module/import system
 
-## Contributing
+### Contributing
 
 We welcome contributions! Areas where you can help:
 
