@@ -12,7 +12,6 @@ diagrams.
 Using the power of math, `yaw` enables high-level, hardware-agnostic, fault tolerance-friendly code.
 As described below, it can be used a standalone language (with both
 functional and `Pythonic` elements) or imported directly as a package in `Python`.
-Please note, `yaw` is a research prototype.
 
 > *Syntax : semantics = algebra : Hilbert space.*
 
