@@ -244,7 +244,7 @@ We welcome contributions! Areas where you can help:
 
 ### Citation
 
-If you use yaw in research, please cite:
+If you use `yaw` in research, please cite:
 
 ```bibtex
 @software{yaw2025,
