@@ -191,29 +191,50 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 
 **Current: v0.1.0 (Initial Public Release)**
 
-`yaw` is a research prototype transitioning to production. What works (modulo Heisenbugs):
-- ✅ Core operator algebra with normalization
-- ✅ State functionals with GNS foundations
-- ✅ Full-featured REPL with special syntax
-- ✅ Compiler (yaw → Python)
-- ✅ Quantum channels and measurement
-- ✅ Basic quantum error correction
-- ✅ Multi-qudit tensor products
-- ✅ Controlled operations and QFT
+`yaw` is a research prototype demonstrating algebraic quantum programming. This release establishes the core paradigm with single-qubit operations.
+
+**What works:**
+- ✅ Operator algebra with symbolic normalization
+- ✅ State functionals (eigenstate characterization)
+- ✅ Unitary conjugation (`<<`, `>>` for single operators)
+- ✅ GNS construction (operators → Hilbert space matrices/vectors)
+- ✅ Projective measurement with branching
+- ✅ REPL with algebra definition syntax
+- ✅ Compiler (`.yaw` → Python)
+- ✅ Single-qubit gates (Hadamard, Pauli, rotations)
+- ✅ Basic tensor products
+
+**Known limitations:**
+- Tensor product conjugation (e.g., `(H @ I) >> A`) not yet implemented
+- Multi-qubit controlled operations need superposition handling improvements
+- Quantum error correction codes (defined but not demonstrated)
+
+**Examples:**
+- `hello_world.yaw` - Demonstrates core concepts (superposition, measurement, GNS)
+- More examples coming in v0.2.0
+
+---
 
 **Roadmap:**
 
-*v0.2.0 (Q2-3 2026)*
-- Oscillator algebra and bosonic codes
-- Advanced QEC (surface, color codes)
-- Compiler optimization passes
+**v0.2.0 (Q1 2026)** - *Multi-qubit robustness*
+- Tensor product conjugation (`TensorProduct.__rshift__`)
+- Improved superposition handling for controlled operations
+- Gate teleportation example (algebraically natural)
+- Additional examples: Bell states, Grover, basic QEC
 - Comprehensive test suite
 
-*v0.3.0 (2027)*
-- λix backend (hardware-agnostic compilation)
+**v0.3.0 (2027)** - *Oscillators and advanced codes*
+- Oscillator algebra (continuous variables)
+- Surface codes and topological QEC
+- Compiler optimization passes
 - Stabilizer code automation
+
+**v0.4.0 (2028)** - *λix integration*
+- Hardware-agnostic backend (λix)
 - Type system for quantum programs
 - Module/import system
+- Production-ready tooling
 
 ### Contributing
 
