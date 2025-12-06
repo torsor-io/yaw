@@ -18,14 +18,14 @@ C*-algebras and the semantics by Hilbert space.
 
 `yaw` directly works with the algebra, but also allows users to
 "compile" to the usual Hilbert space vectors and matrices using
-something called the *Gelfand-Naimark-Segal* representation.
+something called the [*Gelfand-Naimark-Segal* construction](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
 So we don't abandon Hilbert space, just give it some help!
 
 > yaw algebraic way
 
-In terms of Euler angles, `yaw` (aspirationally) is the
+In terms of [Euler angles](https://en.wikipedia.org/wiki/Euler_angles), `yaw` (aspirationally) is the
 direction we're headed. However, it also stands for `yaw algebraic
-way`, a backronym which is not merely recursive, but
+way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not merely [recursive](https://en.wikipedia.org/wiki/Recursive_acronym), but
 *self-conjugating*, since `yaw⁻¹` = `way`.
 Someone had too much time on their hands.
 
@@ -253,6 +253,7 @@ We welcome contributions! Areas where you can help:
 
 - [The Structure and Interpretation of Quantum Programs I: Foundations](https://arxiv.org/abs/2509.04527) (2025), David Wakeham. A detailed introduction to the mathematical foundations of `yaw`.
 - [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + alternate history motivating the need for a new approach to quantum computing.
+- []
 
 ## Citation
 
