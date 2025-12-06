@@ -38,5 +38,8 @@ __all__ = [
     'qudit', 'qubit',
     
     # QEC
-    'Encoding', 'rep', 'StabilizerCode', 'five_qubit_code', 'bit_flip_code'
+    'Encoding', 'rep', 'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
+    
+    # GNS construction (Hilbert space representations)
+    'gnsVec', 'gnsMat'
 ]
