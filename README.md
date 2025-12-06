@@ -18,7 +18,7 @@ C*-algebras and the semantics by Hilbert space.
 
 `yaw` directly works with the algebra, but also allows users to
 "compile" to the usual Hilbert space vectors and matrices using
-something called the [*Gelfand-Naimark-Segal* construction](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
+something called the [*Gelfand-Naimark-Segal (GNS) construction*](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
 So we don't abandon Hilbert space, just give it some help!
 
 > yaw algebraic way
@@ -36,7 +36,7 @@ Someone had too much time on their hands.
 ```bash
 git clone https://github.com/torsor-io/yaw.git
 cd yaw
-pip install -r requirements.txt  # Just sympy for now
+pip install -r requirements.txt  # Just sympy and numpy for now
 ```
 
 ### Three Ways to Use yaw
@@ -159,6 +159,7 @@ There are a few special, additional pieces of syntax:
 {{X, Z}}                                 # Anticommutator
 [P_{k} = proj(Z, k) for k in range(2)]   # Create P_0, P_1
 expr ! pow(3), herm                      # Local context (temporary relations)
+gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vectors
 ```
 
 ## Codebase
