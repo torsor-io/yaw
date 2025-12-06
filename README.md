@@ -240,6 +240,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 - Automated spectral decomposition for controlled operations
 - Additional examples: Bell states, Grover, HSP, basic QEC
 - Comprehensive test suite
+- Jupyter notebooks
 
 **v0.3.0 (2027)**: *Oscillators and advanced codes*
 - Oscillator algebra (continuous variables)
