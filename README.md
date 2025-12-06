@@ -241,13 +241,13 @@ We plan to add more (to facilitate abstract manipulation) in future.
 - Comprehensive test suite
 - Jupyter notebooks
 
-**v0.3.0 (2027)**: *Oscillators and advanced codes*
+**v0.3.0 (Q2-3 2026)**: *Oscillators and advanced codes*
 - Oscillator algebra (continuous variables)
 - Surface codes and topological QEC
 - Compiler optimization passes
 - Stabilizer code automation
 
-**v0.4.0 (2028)**: *λix integration*
+**v0.4.0 (Q1 2027)**: *λix integration*
 - Hardware-agnostic backend (λix)
 - Type system for quantum programs
 - Module/import system
