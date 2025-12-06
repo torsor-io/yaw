@@ -187,7 +187,7 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 - Generates readable, documented code
 - Handles special syntax (commutators, subscripts, comprehensions)
 
-### Status and Roadmap
+### Status
 
 **Current: v0.1.0 (Initial Public Release)**
 
@@ -213,9 +213,7 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 - `hello_world.yaw` - Demonstrates core concepts (superposition, measurement, GNS)
 - More examples coming in v0.2.0
 
----
-
-**Roadmap:**
+### Roadmap
 
 **v0.2.0 (Q1 2026)** - *Multi-qubit robustness*
 - Tensor product conjugation (`TensorProduct.__rshift__`)
