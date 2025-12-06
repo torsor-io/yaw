@@ -121,7 +121,7 @@ We can combine operators, states, and channels in various ways:
 ```python
 A @ B           # Tensor product of operators and states: A ⊗ B
 U >> A          # Operator conjugation: A ↦ U† A U (Heisenberg)
-U << psi        # State conjugation: ψ(⋅) ↦ ψ(U† ⋅ U) (Schrödinger)
+U << psi        # State conjugation: ψ = ⟨ψ|⋅|ψ⟩ ↦ ⟨ψ|U† ⋅ U|ψ⟩ (Schrödinger)
 A | psi         # Evaluate A in state ψ: ψ(A)
 A | C_1 | C_2   # Evaluate A in channel C_1, then C_2, etc: C_2[C_1[A]]
 ```
