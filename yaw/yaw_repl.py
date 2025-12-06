@@ -346,9 +346,6 @@ class YawREPL:
         if line_stripped == 'credits':
             return self._show_credits()
 
-        if line_stripped == 'puzzle':
-            return self._show_puzzle()
-
         line_stripped = self._preprocess_commutators(line_stripped)
 
         # *** CRITICAL: Handle multi-line statements FIRST ***
@@ -1266,7 +1263,7 @@ class YawREPL:
         print("Version 0.1.0")
         print("Torsor Labs, 2025")
         print("─" * 60)
-        print("Type 'help', 'credits', or 'puzzle' for more information.")
+        print("Type 'help' or 'credits' for more information.")
         
         while True:
             try:
@@ -1308,15 +1305,6 @@ class YawREPL:
 ────────────────────────────────────────────────────────────
    """
         return credit_text.strip()
-
-    def _show_puzzle(self):
-        """Display puzzle."""
-        puzzle_text = """
-────────────────────────────────────────────────────────────
-    Made with love, coffee, and Claude.
-────────────────────────────────────────────────────────────
-   """
-        return puzzle_text.strip()
                     
     def _show_help(self):
         """Display help information."""
