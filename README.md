@@ -40,6 +40,7 @@ Someone had too much time on their hands.
 - [References](#references)
 - [Citation](#citation)
 - [License](#license)
+- [Contact](#contact)
 
 ## Quick Start
 
@@ -251,7 +252,7 @@ We welcome contributions! Areas where you can help:
 ## References
 
 - [The Structure and Interpretation of Quantum Programs I: Foundations](https://arxiv.org/abs/2509.04527) (2025), David Wakeham. A detailed introduction to the mathematical foundations of `yaw`.
-- [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + fictional history motivating the need for a new approach to quantum computing.
+- [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + alternate history motivating the need for a new approach to quantum computing.
 
 ## Citation
 
@@ -272,10 +273,6 @@ If you use yaw in research, please cite:
 
 Apache 2.0 - see [LICENSE](LICENSE).
 
-## Acknowledgments
-
-`yaw` builds on stable foundations: operator algebras and quantum mechanics (von Neumann, Gelfand, Naimark, Segal, et al.), Boolean digital logic (Leibniz, Boole, Shannon, et al.), quantum error correction (Gottesman, Knill, Laflamme, Poulin, Shor, et al.), and the spirit of Bell Labs.
-
 ## Contact
 
 **David Wakeham**  
@@ -284,4 +281,4 @@ Torsor Labs
 
 ---
 
-*Made with love, coffee, and assistance from Claude.*
+*Made with love, coffee, and Claude.*
