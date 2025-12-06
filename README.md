@@ -11,10 +11,10 @@ functional and `Pythonic` elements) or imported directly as a package in `Python
 
 > *Syntax : semantics = algebra : Hilbert space.*
 
-In digital circuits, the syntax (proofs) is governed by the Boolean algebra and
-the semantics (meaning) by truth tables. Similarly, our core insight
+In digital circuits, syntax (proof) is governed by the Boolean algebra and
+semantics (meaning) by truth tables. Similarly, our core insight
 is that for quantum circuits, the syntax should be governed by
-C*-algebra and the semantics by Hilbert space.
+C*-algebras and the semantics by Hilbert space.
 
 `yaw` directly works with the algebra, but also allows users to
 "compile" to the usual Hilbert space vectors and matrices using
