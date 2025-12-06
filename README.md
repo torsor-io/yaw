@@ -201,7 +201,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 - Commutator/anticommutator syntax
 - Multi-line statements (`for`, `if`, `def`)
 
-`yaw/y2py.py`: *`Python` compiler*
+`yaw/y2py.py`: *`Python` compyler*
 - Transforms `.yaw` files to `.py`
 - Preserves algebraic semantics
 - Generates readable, documented code
@@ -220,7 +220,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 - ✅ GNS construction (operators → Hilbert space matrices/vectors)
 - ✅ Projective measurement with branching
 - ✅ REPL with algebra definition syntax
-- ✅ Compiler (`.yaw` → Python)
+- ✅ Compyler (`.yaw` → `.py`)
 - ✅ Single-qubit gates (Hadamard, Pauli, rotations)
 - ✅ Basic tensor products
 
