@@ -231,7 +231,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 
 **Examples:**
 - `hello_world.yaw` demonstrates core concepts
-- More examples coming in v0.2.0
+- More examples coming soon!
 
 ### Roadmap
 
