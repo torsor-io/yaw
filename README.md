@@ -276,7 +276,7 @@ We welcome contributions! Areas where you can help:
 ### Philosophy
 
 `yaw` follows the Bell Labs model: fundamental
-research, long timescales, and trust in quality over speed. We welcome contributors who share this vision.
+research, generous timescales, and trust in quality over speed. We welcome contributors who share this vision.
 
 ### References
 
