@@ -273,6 +273,11 @@ We welcome contributions! Areas where you can help:
 
 ## Details
 
+### Philosophy
+
+`yaw` follows the Bell Labs model (under Mervin Kelly): fundamental
+research, long timescales, and trust in quality over speed. We welcome contributors who share this vision.
+
 ### References
 
 - [The Structure and Interpretation of Quantum Programs I: Foundations](https://arxiv.org/abs/2509.04527) (2025), David Wakeham. A detailed introduction to the mathematical foundations of `yaw`.
