@@ -23,9 +23,9 @@ So we don't abandon Hilbert space, just give it some help!
 
 > yaw algebraic way
 
-In terms of [Euler angles](https://en.wikipedia.org/wiki/Euler_angles), `yaw` (aspirationally) is the
-direction we're headed. However, it also stands for `yaw algebraic
-way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not merely [recursive](https://en.wikipedia.org/wiki/Recursive_acronym), but
+In terms of [Euler angles](https://en.wikipedia.org/wiki/Euler_angles), `yaw` is (aspirationally) the
+direction we want to head. Not content with this humblebrag, it also stands for `yaw algebraic
+way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [recursive](https://en.wikipedia.org/wiki/Recursive_acronym), but
 *self-conjugating*, since `yaw⁻¹` = `way`.
 Someone had too much time on their hands.
 
