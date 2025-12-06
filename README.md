@@ -237,9 +237,8 @@ We plan to add more (to facilitate abstract manipulation) in future.
 
 **v0.2.0 (Q1 2026)**: *Multi-qubit robustness*
 - Tensor product conjugation (`TensorProduct.__rshift__`)
-- Improved superposition handling for controlled operations
-- Gate teleportation example (algebraically natural)
-- Additional examples: Bell states, Grover, basic QEC
+- Automated spectral decomposition for controlled operations
+- Additional examples: Bell states, Grover, HSP, basic QEC
 - Comprehensive test suite
 
 **v0.3.0 (2027)**: *Oscillators and advanced codes*
