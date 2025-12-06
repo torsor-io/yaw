@@ -76,10 +76,8 @@ from yaw import *
 pauli = Algebra(gens=['X', 'Z'], rels=['herm', 'unit', 'anti', 'pow(2)'])
 H = (pauli.X + pauli.Z) / sqrt(2)
 
-print((H >> pauli.Z).normalize())  # X
-
-psi0 = char(pauli.Z, 0)
-print(gnsMat(psi0, H))
+(H >> pauli.Z).normalize()        # X (symbolic)
+gnsMat(char(pauli.Z, 0), H)       # Hadamard matrix (concrete)
 # [[ 0.707  0.707]
 #  [ 0.707 -0.707]]
 ```
