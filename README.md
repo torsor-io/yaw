@@ -114,7 +114,7 @@ $alg = <X, Z | herm, unit, pow(3), braid(exp(2*pi*I/3))>
 
 ```
 
-Here, `$alg` is a global algebra variable, hence the `$`.
+Here, `$alg` is a global algebra variable, hence the `$` (taking inspiration from `Unix`).
 
 ### States are functionals
 
