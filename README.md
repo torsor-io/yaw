@@ -19,11 +19,12 @@ In digital circuits, syntax (proof) is governed by the Boolean algebra and
 semantics (meaning) by truth tables. Similarly, our core insight
 is that for quantum circuits, the syntax should be governed by
 C*-algebras and the semantics by Hilbert space.
+Confining yourself to Hilbert space is like programming entirely with truth tables!
 
 `yaw` directly works with the algebra, but also allows users to
 "compile" to the usual Hilbert space vectors and matrices using
-something called the [*Gelfand-Naimark-Segal (GNS) construction*](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
-So we don't abandon Hilbert space, just give it some help!
+the [*Gelfand-Naimark-Segal (GNS) construction*](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
+We don't abandon Hilbert space, but complement it with symbolic methods!
 
 > yaw algebraic way
 
