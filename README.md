@@ -1,13 +1,13 @@
 # yaw: Algebraic Quantum Programming
 
+**Program directly with observables.**
+
 `yaw` is a quantum programming language where programs are elements of operator algebras, not circuit
 diagrams.
-Using the power of math, `yaw` enables high-level, hardware
-agnostic, and fault tolerance-friendly code.
-Please note, it is currently a research prototype rather than a
-production language.
+Using the power of math, `yaw` enables high-level, hardware-agnostic, fault tolerance-friendly code.
 As described below, it can be used a standalone language (with both
 functional and `Pythonic` elements) or imported directly as a package in `Python`.
+Please note, it is currently a research prototype and much work needs to be done!
 
 > *Syntax : semantics = algebra : Hilbert space.*
 
@@ -29,6 +29,13 @@ way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [
 *self-conjugating*, since `yaw⁻¹` = `way`.
 Someone had too much time on their hands.
 
+## Table of Contents
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+- [Language Components](#language-components)
+- [Status & Roadmap](#status)
+- [Contributing](#contributing)
+
 ## Quick Start
 
 ### Installation
@@ -39,7 +46,14 @@ cd yaw
 pip install -r requirements.txt  # Just sympy and numpy for now
 ```
 
-### Three Ways to Use yaw
+### Try the Example
+
+```bash
+python -m yaw.y2py examples/hello_world.yaw -o hello.py
+python hello.py
+```
+
+### Three Ways to Use `yaw`
 
 **1. Interactive REPL**
 
