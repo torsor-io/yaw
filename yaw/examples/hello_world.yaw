@@ -1,5 +1,5 @@
 # hello_world.yaw
-# Create and measure a superposition
+# Create basic states and operators
 
 $alg = <X, Z | herm, unit, anti, pow(2)>   # define the Pauli algebra
 
