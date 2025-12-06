@@ -118,7 +118,7 @@ Here, `$alg` is a global algebra variable, hence the `$` (taking inspiration fro
 
 ### States are functionals
 
-If we view operators as random variables, states are *expectation functionals*. Eigenstates become expectations for which an operator has zero variance.
+If we view operators as random variables, states are *expectation functionals*. Eigenstates become expectations for which an operator has zero variance:
 
 ```python
 psi0 = char(Z, 0)      # |0⟩ eigenstate
@@ -130,7 +130,7 @@ Z**2 | psi0            # ⟨Z²⟩ = 1.0 - same as mean squared
 psi0.expect(Z)         # Python syntax
 ```
 
-The vertical line `|` should recall conditional probability, which put differently, assigns *context*. Here, the state is itself a context in which to evaluate the operator. This is also like the pipe operator from Unix. Snap!
+The vertical line `|` should recall conditional probability, which assigns (probablistic) *context*. Here, the state is itself a probabilistic context in which to evaluate the operator. This is also like the pipe operator from `Unix`. Snap!
 
 ### Fundamental combinators
 
