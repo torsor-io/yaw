@@ -29,6 +29,17 @@ way`, a backronym which is not merely recursive, but
 *self-conjugating*, since `yaw⁻¹` = `way`.
 Someone had too much time on their hands.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+- [Language Components](#language-components)
+- [Status and Roadmap](#status-and-roadmap)
+- [Contributing](#contributing)
+- [Philosophy](#philosophy)
+- [Citation](#citation)
+- [License](#license)
+
 ## Quick Start
 
 ### Installation
