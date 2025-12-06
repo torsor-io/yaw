@@ -1153,7 +1153,7 @@ class YawOperator:
                             return EigenState(state.observable, flipped_index, state.algebra)
                         else:
                             # For d > 2, more complex
-                            return TransformedState(state, self)
+                            return ConjugatedState(self, state)
 
                     # Try to compute commutator [A, B]
                     comm = (self * state.observable - state.observable * self).normalize()
@@ -1167,11 +1167,11 @@ class YawOperator:
                     # If computation fails, fall back
                     pass
 
-            # Default: create transformed state
-            return TransformedState(state, self)
+            # Default: create conjugated state
+            return ConjugatedState(self, state)
 
         else:
-            return TransformedState(state, self)
+            return ConjugatedState(self, state)
 
 # ============================================================================
 # COMMUTATORS AND ANTICOMMUTATORS
@@ -2520,6 +2520,10 @@ class ConjugatedState(State):
         if _depth > 10:
             return 0.0
         
+        
+        # Expand projectors to algebraic form first
+        if isinstance(op, Projector):
+            op = op.expand()
         # Transform operator instead of state
         transformed_op = self.unitary.conj_op(op)
         transformed_op_norm = transformed_op.normalize()
@@ -3054,7 +3058,12 @@ class OpMeasurement:
         # Compute probabilities
         probs = []
         for K in self.kraus_ops:
-            prob = self.state.expect(K.adjoint() * K)
+            # Expand projectors first for correct probability calculation
+            if isinstance(K, Projector):
+                K_expanded = K.expand()
+                prob = self.state.expect(K_expanded)
+            else:
+                prob = self.state.expect(K.adjoint() * K)
             # Convert to float, handling complex numbers
             prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
             probs.append(max(0.0, prob_float))  # Ensure non-negative
@@ -3292,7 +3301,12 @@ class StBranches:
         branches = []
         
         for K in self.kraus_ops:
-            prob = self.state.expect(K.adjoint() * K)
+            # Expand projectors first for correct probability calculation
+            if isinstance(K, Projector):
+                K_expanded = K.expand()
+                prob = self.state.expect(K_expanded)
+            else:
+                prob = self.state.expect(K.adjoint() * K)
             prob_float = float(prob.real) if hasattr(prob, 'real') else float(prob)
             prob_float = max(0.0, prob_float)  # Ensure non-negative
             
