@@ -50,3 +50,4 @@ htmlcov/
 *.pyc
 scratch/
 test_output/
+.DS_Store
