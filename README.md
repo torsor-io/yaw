@@ -201,8 +201,8 @@ We plan to add more (to facilitate abstract manipulation) in future.
 - Commutator/anticommutator syntax
 - Multi-line statements (`for`, `if`, `def`)
 
-`yaw/y2py.py`: *Python compiler*
-- Transforms `.yaw` files to Python
+`yaw/y2py.py`: *`Python` compiler*
+- Transforms `.yaw` files to `.py`
 - Preserves algebraic semantics
 - Generates readable, documented code
 - Handles special syntax (commutators, subscripts, comprehensions)
