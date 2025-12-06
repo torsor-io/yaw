@@ -146,7 +146,7 @@ A | C_1 | C_2   # Evaluate A in channel C_1, then C_2, etc: C_2[C_1[A]]
 
 ### Measurement: four interfaces
 
-Measurement is a tricky notion, since it can mean the average outcome, a random choice over a state-induced distribution, or a branching process where we keep track of all outcomes.
+"Measurement" is an ambiguous term; it can mean the average outcome, sampling from a state-induced distribution, or a branching process where we keep track of all outcomes. We implement all of the above:
 
 ```python
 # 1. Expectation values (most common)
@@ -177,6 +177,8 @@ There are a few special, additional pieces of syntax:
 expr ! pow(3), herm                      # Local context (temporary relations)
 gnsMat(A), gnsVec(psi)                   # Concrete GNS Hilbert space matrices/vectors
 ```
+
+We plan to add more (to facilitate abstract manipulation) in future.
 
 ## Codebase
 
