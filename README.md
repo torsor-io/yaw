@@ -1,6 +1,6 @@
 # yaw: Algebraic Quantum Programming
 
-**Program directly with observables.**
+**Stop fiddling with qubits and program directly with observables.**
 
 `yaw` is a quantum programming language where programs are elements of operator algebras, not circuit
 diagrams.
