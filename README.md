@@ -236,7 +236,7 @@ We welcome contributions! Areas where you can help:
 -
   [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + alternate history motivating the need for an algebraic approach to quantum computing.
 
-## Citation
+### Citation
 
 If you use yaw in research, please cite:
 
