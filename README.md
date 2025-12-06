@@ -30,11 +30,12 @@ way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [
 Someone had too much time on their hands.
 
 ## Table of Contents
-- [Quick Start](#quick-start)
-- [Core Concepts](#core-concepts)
-- [Language Components](#language-components)
-- [Status & Roadmap](#status)
-- [Contributing](#contributing)
+- [Quick start](#quick-start)
+- [Core concepts](#core-concepts)
+- [Language components](#language-components)
+- [Codebase](#codebase)
+- [Details](#details)
+- [Contact](#contact)
 
 ## Quick Start
 
@@ -46,14 +47,14 @@ cd yaw
 pip install -r requirements.txt  # Just sympy and numpy for now
 ```
 
-### Try the Example
+### Try the example
 
 ```bash
 python -m yaw.y2py examples/hello_world.yaw -o hello.py
 python hello.py
 ```
 
-### Three Ways to Use `yaw`
+### Three ways to use `yaw`
 
 **1. Interactive REPL**
 
