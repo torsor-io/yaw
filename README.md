@@ -59,10 +59,10 @@ X
 **2. Compile to Python**
 
 You can use the same syntax in `.yaw` files and compile to `Python`
-using `yawc.py`:
+using `y2py.py`:
 
 ```bash
-python -m yaw.yawc protocol.yaw -o protocol.py
+python -m yaw.y2py protocol.yaw -o protocol.py
 python protocol.py
 ```
 
@@ -183,7 +183,7 @@ gnsMat(A), gnsVec(psi)                   # Concrete Hilbert space matrices/vecto
 - Commutator/anticommutator syntax
 - Multi-line statements (`for`, `if`, `def`)
 
-`yaw/yawc.py` - *Compiler*
+`yaw/y2py.py` - *Compiler*
 - Transforms `.yaw` files to Python
 - Preserves algebraic semantics
 - Generates readable, documented code
