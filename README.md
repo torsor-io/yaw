@@ -295,7 +295,7 @@ If you use `yaw` in research, please cite:
 
 ### License
 
-**Apache 2.0**, see [LICENSE](LICENSE).
+Apache 2.0, see [LICENSE](LICENSE).
 
 ## Contact
 
