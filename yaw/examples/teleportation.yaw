@@ -1,0 +1,70 @@
+# teleportation.yaw
+# Quantum teleportation protocol using algebraic operators
+
+# Define Pauli algebra
+$alg = <X, Z | herm, unit, anti, pow(2)>
+
+# === Gates ===
+H = (X + Z) / sqrt(2)
+CNOT = ctrl(Z, [I, X])
+
+# === Protocol Setup ===
+# Alice has unknown state |ψ⟩ = α|0⟩ + β|1⟩ to teleport to Bob
+# For demonstration, use |+⟩ = (|0⟩ + |1⟩)/√2
+psi0 = char(Z, 0)
+psi_alice = (H << psi0)  # Alice's unknown state
+
+print("Alice's unknown state:")
+print("⟨X⟩ =", X | psi_alice)  # 1.0
+print("⟨Z⟩ =", Z | psi_alice)  # 0.0
+
+# === Alice and Bob share entangled pair ===
+# Create Bell state |Φ+⟩ = (|00⟩ + |11⟩)/√2
+psi00 = psi0 @ psi0
+bell_init = (H @ I) << psi00
+bell_pair = CNOT << bell_init
+
+print("\nShared Bell pair created:")
+print("⟨Z₁Z₂⟩ =", (Z @ Z) | bell_pair)  # 1.0 (correlated)
+
+# === Create 3-qubit state: |ψ⟩ₐ ⊗ |Φ+⟩ₐ₂ᵦ ===
+# Qubit 0: Alice's unknown state
+# Qubit 1: Alice's half of Bell pair
+# Qubit 2: Bob's half of Bell pair
+total = psi_alice @ bell_pair
+
+# === Alice performs Bell basis measurement ===
+# She applies CNOT₀₁ then H₀ to her two qubits, then measures in Z basis
+
+# Alice's operations on qubits 0 and 1
+alice_cnot = ctrl(Z @ I, [I @ I, I @ X])  # CNOT on qubits 0,1
+alice_h = (H @ I @ I)  # H on qubit 0
+
+# Apply Alice's operations
+after_cnot = alice_cnot << total
+after_h = alice_h << after_cnot
+
+# Alice measures both her qubits in computational (Z) basis
+# This gives 4 outcomes: |00⟩, |01⟩, |10⟩, |11⟩
+[P_{k} = proj(Z @ Z @ I, k) for k in range(4)]
+
+print("\nAlice's measurement and Bob's state:")
+branches = stBranches([P_0, P_1, P_2, P_3], after_h)
+
+corrections = [I, X, Z, Z * X]  # Bob's corrections for each outcome
+outcome_names = ['00', '01', '10', '11']
+
+for i, (bob_state, prob) in enumerate(branches()):
+    if prob > 0.01:  # Only show non-zero outcomes
+        print(f"\nOutcome {outcome_names[i]}: probability {prob:.3f}")
+        
+        # Bob applies correction based on Alice's classical message
+        bob_corrected = corrections[i] << bob_state
+        
+        # Verify Bob recovered Alice's original state
+        print(f"  Bob applies {corrections[i]}")
+        print(f"  ⟨X⟩ = {X | bob_corrected:.3f} (should be 1.0)")
+        print(f"  ⟨Z⟩ = {Z | bob_corrected:.3f} (should be 0.0)")
+
+print("\n✓ Teleportation complete!")
+print("Bob's state matches Alice's original state after correction.")
