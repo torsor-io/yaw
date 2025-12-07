@@ -313,5 +313,3 @@ Torsor Labs
 [Email](mailto:david@torsor.io) | [Website](https://torsor.io)
 
 ---
-
-*Made with love, coffee, and Claude.*
