@@ -7,9 +7,9 @@
 
 **Stop fiddling with qubits and program observables directly.**
 
-`yaw` is a quantum programming language where programs are elements of operator algebras, not circuit
-diagrams.
-Using the power of math, `yaw` enables high-level, hardware-agnostic, fault tolerance-friendly code.
+`yaw` is a quantum programming language where programs are elements of
+an operator algebra, not a circuit diagram.
+Using the power of math, this enables high-level, hardware-agnostic, fault tolerance-friendly code.
 As described below, it can be used a standalone language (with both
 functional and `Pythonic` elements) or imported directly as a package in `Python`.
 
