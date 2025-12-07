@@ -110,7 +110,7 @@ essentially assembly in braket notation. This creates three fundamental problems
    topologies, gate sets and hardware
 2. **Fault-tolerance friction**: Error correction happens "around" programs rather than within
 3. **Missing abstraction layer**: Classical computing has Boolean
-   algebra, quantum computing has what?
+   algebra, quantum computing has... more circuits
 
 `yaw` provides the missing layer analogous to Boolean algebra, making quantum programs:
 1. **Hardware-agnostic**: Operators can be approximately compiled to
