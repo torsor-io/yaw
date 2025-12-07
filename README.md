@@ -207,15 +207,15 @@ We plan to add more (to facilitate abstract manipulation) in future.
 
 ### Language components
 
-`yaw` consists of three integrated tools:
-
 `yaw/yaw_prototype.py`: *Core library*
 - Operator algebra with symbolic manipulation
-- States as functionals (+ GNS construction)
+- States as functionals
+- Basic tensor product support
+- GNS map to vectors/matrices
 - Quantum channels (Heisenberg and Schrödinger pictures)
-- Measurement primitives with Born rule statistics
-- Quantum error correction (encodings as functors)
-- Context management for complex programs
+- Measurement primitives with Born rule
+- Basic quantum error correction
+- Basic context management for symbolic evaluation
 
 `yaw/yaw_repl.py`: *Interactive development*
 - Algebra definition: `$alg = <gens | rels>`
@@ -226,9 +226,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 
 `yaw/y2py.py`: *`Python` compyler*
 - Transforms `.yaw` files to `.py`
-- Preserves algebraic semantics
 - Generates readable, documented code
-- Handles special syntax (commutators, subscripts, comprehensions)
 
 ### Status
 
