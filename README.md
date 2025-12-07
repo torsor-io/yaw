@@ -285,7 +285,7 @@ who share this vision.
 
 - [The Structure and Interpretation of Quantum Programs I: Foundations](https://arxiv.org/abs/2509.04527) (2025), David Wakeham. A detailed introduction to the mathematical foundations of `yaw`.
 -
-  [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + alternate history motivating the need for an algebraic approach to quantum computing.
+  [A Short History of Rocks: or, How to Invent Quantum Computing](https://arxiv.org/abs/2503.00005) (2025), David Wakeham. An essay + alternate history motivating the need for an algebraic quantum programming.
 
 ### Citation
 
@@ -314,4 +314,4 @@ Torsor Labs
 
 ---
 
-*Made with love, coffee, and the heroic ability to resist distraction.*
+*Made with love, coffee, and Claude.*
