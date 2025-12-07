@@ -104,8 +104,8 @@ gnsMat(char(pauli.Z, 0), H)       # Hadamard matrix (concrete)
 
 ## Why `yaw`?
 
-Current quantum programming languages identify computation with circuit diagrams,
-essentially assembly in braket notation. This creates three fundamental problems:
+Most quantum  languages identify computation with circuit diagrams,
+which is basically assembly in braket notation. This creates three fundamental problems:
 
 1. **Hardware lock-in**: Circuit-level code is tied to specific qubit
    topologies, gate sets and hardware
