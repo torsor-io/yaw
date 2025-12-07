@@ -314,4 +314,4 @@ Torsor Labs
 
 ---
 
-*Made with love, coffee, and Claude.*
+*Made with love, coffee, and the heroic ability to resist distraction.*
