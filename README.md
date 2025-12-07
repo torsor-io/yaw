@@ -251,7 +251,7 @@ partial support for tensor products and multi-system operations.
 - Multi-qubit controlled operations need automated spectral decomposition
 
 **Examples:**
-- `hello_world.yaw` demonstrates core concepts
+- `hello_world.yaw` goes through basic concepts
 - Coming soon: Bell states, Grover, HSP, basic QEC
 
 ### Roadmap
