@@ -112,11 +112,11 @@ essentially assembly in braket notation. This creates three fundamental problems
 3. **Missing abstraction layer**: Classical computing has Boolean
    algebra, quantum computing has what?
 
-`yaw` provides the missing syntactic layer, making quantum programs:
+`yaw` provides the missing layer analogous to Boolean algebra, making quantum programs:
 1. **Hardware-agnostic**: Operators can be approximately compiled to
   any suitably expressive hardware
 2. **QEC-native**: Stabilizer codes are already algebraic objects
-3. **Mathematically principled**: Programs are algebraic expressions, not ad-hoc circuits
+3. **Mathematically principled**: Programs can be simplified algebraically
 
 This is paradigm-shift infrastructure for the fault-tolerant era.
 
