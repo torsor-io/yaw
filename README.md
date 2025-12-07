@@ -238,30 +238,27 @@ partial support for tensor products and multi-system operations.
 
 **What works:**
 - ✅ Operator algebra with symbolic normalization
-- ✅ State functionals (eigenstate characterization)
+- ✅ State functionals and eigenstates
 - ✅ Unitary conjugation (`<<`, `>>` for single operators)
 - ✅ GNS construction (operators → Hilbert space matrices/vectors)
 - ✅ Projective measurement with branching
 - ✅ REPL with algebra definition syntax
 - ✅ Compyler (`.yaw` → `.py`)
-- ✅ Single-qubit gates (Hadamard, Pauli, rotations)
 - ✅ Basic tensor products
 
 **Known limitations:**
 - Tensor product conjugation (e.g., `(H @ I) >> A`) not yet implemented
 - Multi-qubit controlled operations need automated spectral decomposition
-- Basic QEC support needs to be finalized
 
 **Examples:**
 - `hello_world.yaw` demonstrates core concepts
-- More examples coming soon!
+- Coming soon: Bell states, Grover, HSP, basic QEC
 
 ### Roadmap
 
 **v0.2.0 (Q1 2026)**: *Multi-qubit robustness*
 - Tensor product conjugation (`TensorProduct.__rshift__`)
 - Automated spectral decomposition for controlled operations
-- Additional examples: Bell states, Grover, HSP, basic QEC
 - Comprehensive test suite
 - Jupyter notebooks
 
@@ -274,25 +271,7 @@ partial support for tensor products and multi-system operations.
 **v0.4.0 (Q1 2027)**: *λix integration*
 - Hardware-agnostic backend (λix)
 - Type system for quantum programs
-- Module/import system
 - Production-ready tooling
-
-### Contributing
-
-We welcome contributions! Areas where you can help:
-
-- **Core library**: New operators, states, channels, QEC codes
-- **REPL**: Better error messages, tab completion, history
-- **Compiler**: Optimization passes, type checking, new syntax
-- **Examples**: Quantum algorithms, protocols, tutorials
-- **Documentation**: Guides, API docs, pedagogical content
-- **Testing**: Unit tests, integration tests, benchmarks
-
-**Quick start for contributors:**
-1. Fork the repository
-2. Make your changes with clear commit messages
-3. Submit a pull request
-4. We'll review and provide feedback
 
 ## Details
 
