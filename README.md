@@ -117,7 +117,7 @@ which is basically assembly in braket notation. This creates three fundamental p
 `yaw` provides a missing layer analogous to Boolean algebra, making quantum programs:
 1. **Hardware-agnostic**: Operators can be approximately compiled to
   any suitably expressive hardware
-2. **QEC-native**: Stabilizer codes are already algebraic objects
+2. **QEC-native**: Stabilizer codes are already naturally algebraic
 3. **Mathematically principled**: Programs can be simplified
    algebraically and stored efficienctly
 
