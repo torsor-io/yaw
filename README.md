@@ -107,10 +107,10 @@ Current quantum programming languages identify computation with circuit diagrams
 essentially assembly in braket notation. This creates three fundamental problems:
 
 1. **Hardware lock-in**: Circuit-level code is tied to specific qubit
-   topologies, gate sets and hardware modalities
-2. **Fault-tolerance friction**: Error correction happens "around" programs rather than being intrinsic
+   topologies, gate sets and hardware
+2. **Fault-tolerance friction**: Error correction happens "around" programs rather than within
 3. **Missing abstraction layer**: Classical computing has Boolean
-   algebra to simplify circuits; quantum computing has... nothing
+   algebra, quantum computing has what?
 
 `yaw` provides the missing syntactic layer, making quantum programs:
 - **Hardware-agnostic**: Operators compile to any representation via GNS
