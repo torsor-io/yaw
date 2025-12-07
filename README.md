@@ -122,7 +122,7 @@ which is basically assembly in braket notation. This creates three fundamental p
    algebraically and stored efficienctly
 
 As we get closer to error-corrected computation, a language that runs
-freely, fault-tolerantly, and with minimal representational overhead seems like a good idea.
+freely, fault-tolerantly, and with minimal representational overhead seems like a good idea!
 
 ## Core concepts
 
