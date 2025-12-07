@@ -113,8 +113,9 @@ essentially assembly in braket notation. This creates three fundamental problems
    algebra, quantum computing has what?
 
 `yaw` provides the missing syntactic layer, making quantum programs:
-- **Hardware-agnostic**: Operators compile to any representation via GNS
-- **QEC-native**: Error correction emerges from algebraic structure
+- **Hardware-agnostic**: Operators can be approximately compiled to
+  any suitably expressive hardware
+- **QEC-native**: Stabilizer codes are already algebraic objects
 - **Mathematically principled**: Programs are algebraic expressions, not ad-hoc circuits
 
 This is paradigm-shift infrastructure for the fault-tolerant era.
