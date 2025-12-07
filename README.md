@@ -116,9 +116,10 @@ essentially assembly in braket notation. This creates three fundamental problems
 1. **Hardware-agnostic**: Operators can be approximately compiled to
   any suitably expressive hardware
 2. **QEC-native**: Stabilizer codes are already algebraic objects
-3. **Mathematically principled**: Programs can be simplified algebraically
+3. **Mathematically principled**: Programs can be simplified
+   algebraically and stored efficienctly
 
-This is paradigm-shift infrastructure for the fault-tolerant era.
+As fault-tolerance gets closer
 
 ## Core concepts
 
