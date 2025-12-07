@@ -24,7 +24,7 @@ Confining yourself to Hilbert space is like programming entirely with truth tabl
 `yaw` directly works with the algebra, but also allows users to
 "compile" to the usual Hilbert space vectors and matrices using
 the [*Gelfand-Naimark-Segal (GNS) construction*](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
-We don't abandon Hilbert space, but complement it with symbolic methods!
+We don't abandon Hilbert space, but rather, help it out!
 
 > yaw algebraic way
 
