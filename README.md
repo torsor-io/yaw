@@ -26,7 +26,7 @@ Confining yourself to Hilbert space is like programming entirely with truth tabl
 the [*Gelfand-Naimark-Segal (GNS) construction*](https://en.wikipedia.org/wiki/Gelfand%E2%80%93Naimark%E2%80%93Segal_construction).
 We don't abandon Hilbert space. We help it out!
 
-> yaw algebraic way
+> *yaw = yaw algebraic way*
 
 In terms of [Euler angles](https://en.wikipedia.org/wiki/Euler_angles), `yaw` is (aspirationally!) the
 direction we want to be heading. In case this seems presumptuous, it also stands for `yaw algebraic
