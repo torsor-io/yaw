@@ -308,6 +308,8 @@ If you use `yaw` in research, please cite:
 }
 ```
 
+Note that an accompanying paper is in preparation.
+
 ### License
 
 Apache 2.0, see [LICENSE](LICENSE).
