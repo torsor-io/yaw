@@ -5,7 +5,7 @@
 ![Python](https://img.shields.io/badge/python-3.7+-green)
 ![Version](https://img.shields.io/badge/version-0.1.0-orange)
 
-**What if you could program with high-school algebra rather than low-level circuits?**
+**What if you could program quantum computers with high-school algebra rather than low-level circuits?**
 
 `yaw` is a quantum programming language where programs are elements of
 an operator algebra rather than circuit diagrams.
