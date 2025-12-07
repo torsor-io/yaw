@@ -36,12 +36,13 @@ way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [
 
 ## Table of Contents
 - [Quick start](#quick-start)
+- [Why `yaw`?](#why-`yaw`?)
 - [Core concepts](#core-concepts)
 - [Codebase](#codebase)
 - [Details](#details)
 - [Contact](#contact)
 
-## Quick Start
+## Quick start
 
 ### Installation
 
@@ -99,6 +100,22 @@ gnsMat(char(pauli.Z, 0), H)       # Hadamard matrix (concrete)
 # [[ 0.707  0.707]
 #  [ 0.707 -0.707]]
 ```
+
+## Why `yaw`?
+
+Current quantum programming treats programs as circuit diagrams - essentially assembly language for quantum computers. This creates three fundamental problems:
+
+1. **Hardware lock-in**: Circuit-level code is tied to specific qubit topologies and gate sets
+2. **Fault tolerance friction**: Error correction happens "around" programs rather than being intrinsic
+3. **Missing abstraction layer**: Classical computing has Boolean algebra; quantum computing has... circuits?
+
+`yaw` provides the missing syntactic layer, making quantum programs:
+- **Hardware-agnostic**: Operators compile to any representation via GNS
+- **QEC-native**: Error correction emerges from algebraic structure
+- **Mathematically principled**: Programs are algebraic expressions, not ad-hoc circuits
+
+This is paradigm-shift infrastructure for the fault-tolerant era.
+
 ## Core concepts
 
 ### Algebras define systems
