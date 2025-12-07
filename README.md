@@ -36,7 +36,7 @@ way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [
 
 ## Table of Contents
 - [Quick start](#quick-start)
-- [Why `yaw`?](#why-yaw?)
+- [Why `yaw`?](#why-yaw)
 - [Core concepts](#core-concepts)
 - [Codebase](#codebase)
 - [Details](#details)
