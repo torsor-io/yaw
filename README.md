@@ -277,8 +277,9 @@ partial support for tensor products and multi-system operations.
 
 ### Philosophy
 
-`yaw` follows the Bell Labs model: fundamental
-research, generous timescales, and trust in quality over speed. We welcome contributors who share this vision.
+`yaw` follows the Bell Labs model: research fundamentalism, generous
+timescales, and a commitment to depth over speed. We welcome contributors
+who share this vision.
 
 ### References
 
