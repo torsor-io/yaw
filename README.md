@@ -112,7 +112,7 @@ essentially assembly in braket notation. This creates three fundamental problems
 3. **Missing abstraction layer**: Classical computing has Boolean
    algebra, quantum computing has... more circuits
 
-`yaw` provides the missing layer analogous to Boolean algebra, making quantum programs:
+`yaw` provides a missing layer analogous to Boolean algebra, making quantum programs:
 1. **Hardware-agnostic**: Operators can be approximately compiled to
   any suitably expressive hardware
 2. **QEC-native**: Stabilizer codes are already algebraic objects
