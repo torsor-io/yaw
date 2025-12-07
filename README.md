@@ -232,7 +232,9 @@ We plan to add more (to facilitate abstract manipulation) in future.
 
 **Current: v0.1.0 (Initial Public Release)**
 
-`yaw` is a research prototype demonstrating what algebraic quantum programming can look like. This release focuses on single-qubit operations, with partial support for multi-qubit operations.
+`yaw` is a research prototype showcasing algebraic quantum
+programming. This release focuses on single-system operations, with
+partial support for tensor products and multi-system operations.
 
 **What works:**
 - ✅ Operator algebra with symbolic normalization
