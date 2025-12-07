@@ -322,4 +322,4 @@ Torsor Labs
 
 ---
 
-*Made with the financial and moral support of Jon Male.*
+*Made with the moral and financial support of Jon Male.*
