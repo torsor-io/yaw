@@ -119,7 +119,8 @@ essentially assembly in braket notation. This creates three fundamental problems
 3. **Mathematically principled**: Programs can be simplified
    algebraically and stored efficienctly
 
-As fault-tolerance gets closer
+As we get closer to fault-tolerant computation, a langauge that runs
+freely, fault-tolerantly, and symbolically seems like a good idea.
 
 ## Core concepts
 
