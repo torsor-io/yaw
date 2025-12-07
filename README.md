@@ -31,7 +31,7 @@ We don't abandon Hilbert space. We help it out!
 In terms of [Euler angles](https://en.wikipedia.org/wiki/Euler_angles), `yaw` is (aspirationally!) the
 direction we want to be heading. In case this seems presumptuous, it also stands for `yaw algebraic
 way`, a [backronym](https://en.wikipedia.org/wiki/Backronym) which is not only [recursive](https://en.wikipedia.org/wiki/Recursive_acronym), but
-*self-conjugating*, since `YAW⁻¹` = `WAY`. Please note the lateral symmetry.
+*self-conjugating*, since `YAW⁻¹` = `WAY`.
 (Someone had too much time on their hands.)
 
 ## Table of Contents
