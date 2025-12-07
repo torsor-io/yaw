@@ -109,7 +109,8 @@ which is basically assembly in braket notation. This creates three fundamental p
 
 1. **Hardware lock-in**: Circuit-level code is tied to specific qubit
    topologies, gate sets and hardware
-2. **Fault-tolerance friction**: Error correction happens "around" programs rather than within
+2. **Fault-tolerance friction**: Error correction happens "around"
+   programs rather than within (if at all)
 3. **Missing abstraction layer**: Classical computing has Boolean
    algebra, quantum computing has... more circuits
 
