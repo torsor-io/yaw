@@ -772,7 +772,7 @@ class YawREPL:
             QFT, qft, proj, proj_algebraic,
             ctrl, ctrl_single,
             qudit, qubit,
-            Encoding, rep, comm, acomm, gnsVec, gnsMat, spec
+            Encoding, rep, comm, acomm, gnsVec, gnsMat, spec, minimal_poly
         )
 
         # Add current algebra if exists
@@ -851,6 +851,7 @@ class YawREPL:
         namespace['gnsVec'] = gnsVec
         namespace['gnsMat'] = gnsMat
         namespace['spec'] = spec
+        namespace['minimal_poly'] = minimal_poly
 
         return namespace
     
@@ -1290,7 +1291,7 @@ class YawREPL:
             'compose_st_branches', 'compose_op_branches', 'QFT', 'qft',
             'proj', 'ctrl', 'ctrl_single', 'type', 'list', 'dict', 'set',
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
-            'gnsVec', 'gnsMat', 'spec'
+            'gnsVec', 'gnsMat', 'spec', 'minimal_poly'
         }
 
         gens = set()
@@ -1380,7 +1381,7 @@ class YawREPL:
         
         # Show readline status
         if READLINE_AVAILABLE:
-            print("✓ Command history enabled (saved to ~/.yaw_history)")
+            print("[Command history enabled - saved to ~/.yaw_history]")
         
         try:
             while True:
