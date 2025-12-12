@@ -636,7 +636,7 @@ class YawREPL:
             'CollapsedState', 'TransformedState', 'QFT', 'qft', 'proj',
             'compose_st_branches', 'compose_op_branches',
             'len', 'sum', 'abs', 'max', 'min', 'range', 'enumerate', 'zip',
-            'I', 'Encoding'  # Identity
+            'I', 'Encoding'
         }
         
         # Also check if it's an algebra generator
@@ -660,7 +660,7 @@ class YawREPL:
             QFT, qft, proj, proj_algebraic,
             ctrl, ctrl_single,
             qudit, qubit,
-            Encoding, rep, comm, acomm, gnsVec, gnsMat
+            Encoding, rep, comm, acomm, gnsVec, gnsMat, spec
         )
 
         # Add current algebra if exists
@@ -738,6 +738,7 @@ class YawREPL:
         namespace['acomm'] = acomm
         namespace['gnsVec'] = gnsVec
         namespace['gnsMat'] = gnsMat
+        namespace['spec'] = spec
 
         return namespace
     
@@ -1177,7 +1178,7 @@ class YawREPL:
             'compose_st_branches', 'compose_op_branches', 'QFT', 'qft',
             'proj', 'ctrl', 'ctrl_single', 'type', 'list', 'dict', 'set',
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
-            'gnsVec', 'gnsMat'
+            'gnsVec', 'gnsMat', 'spec'
         }
 
         gens = set()
