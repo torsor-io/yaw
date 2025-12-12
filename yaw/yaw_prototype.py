@@ -4876,17 +4876,12 @@ def spec(op, state=None, tolerance=1e-10):
         key=lambda x: (-x.real, -x.imag)
     )
     
-    # Convert to Python floats/complex for cleaner output
-    # Round very small values to zero
+    # Convert to Python floats/complex and clean numerical noise
     result = []
     for ev in eigenvalues_sorted:
-        real_part = ev.real if abs(ev.real) > tolerance else 0.0
-        imag_part = ev.imag if abs(ev.imag) > tolerance else 0.0
-        
-        if imag_part == 0.0:
-            result.append(float(real_part))
-        else:
-            result.append(complex(real_part, imag_part))
+        # Convert to complex, then clean
+        cleaned = _clean_number(complex(ev))
+        result.append(cleaned)
     
     return result
 
