@@ -39,6 +39,52 @@ __all__ = [
 # CONTEXT MANAGEMENT
 # ============================================================================
 
+
+def _clean_number(num, decimals=10):
+    """Clean numerical noise from numbers.
+    
+    Rounds floats and complex numbers to remove numerical errors.
+    Converts numbers very close to integers to exact integers.
+    Converts complex numbers with zero imaginary part to real.
+    
+    Args:
+        num: Number to clean (int, float, or complex)
+        decimals: Number of decimal places to round to (default 10)
+    
+    Returns:
+        Cleaned number
+    """
+    if isinstance(num, (int, bool, type(None))):
+        return num
+    
+    if isinstance(num, float):
+        # Round to remove noise
+        rounded = round(num, decimals)
+        # If very close to zero, make it exactly zero
+        if abs(rounded) < 10**(-decimals):
+            return 0.0
+        # If very close to an integer, make it an integer
+        if abs(rounded - round(rounded)) < 10**(-decimals):
+            return int(round(rounded))
+        return rounded
+    
+    if isinstance(num, complex):
+        # Clean real and imaginary parts separately
+        real_clean = _clean_number(num.real, decimals)
+        imag_clean = _clean_number(num.imag, decimals)
+        
+        # If imaginary part is zero, return just the real part
+        if imag_clean == 0:
+            return real_clean
+        # If real part is zero, return imaginary as complex
+        if real_clean == 0:
+            return complex(0, imag_clean)
+        
+        return complex(real_clean, imag_clean)
+    
+    return num
+
+
 class Context:
     """Context management with variable linking and inheritance.
     
@@ -286,7 +332,7 @@ class Encoding:
 
             # If no operators, just return coefficient
             if not operator_factors:
-                return coeff
+                return _clean_number(coeff)
 
             # Multiply encoded factors together
             result = operator_factors[0]
@@ -2119,9 +2165,9 @@ class Algebra:
 
             # Reconstruct
             if ops:
-                return coeff * Mul(*ops) if coeff != 1 else Mul(*ops)
+                return _clean_number(coeff) * Mul(*ops) if coeff != 1 else Mul(*ops)
             else:
-                return coeff
+                return _clean_number(coeff)
 
         elif isinstance(expr, Add):
             return Add(*[self._apply_braiding(term) for term in expr.args])
@@ -2287,7 +2333,7 @@ class _SimpleState:
         
         # Scalar
         if isinstance(op_expr, SympyNumber) or (hasattr(op_expr, 'is_number') and op_expr.is_number):
-            return complex(op_expr)
+            return _clean_number(complex(op_expr))
         
         # Identity
         if str(op_expr) == 'I':
@@ -2295,11 +2341,11 @@ class _SimpleState:
         
         # The observable itself (eigenvalue = 1)
         if op_expr == obs_expr:
-            return self.eigenvalue
+            return _clean_number(self.eigenvalue)
         
         # Power of observable
         if isinstance(op_expr, Pow) and op_expr.base == obs_expr:
-            return self.eigenvalue ** op_expr.exp
+            return _clean_number(self.eigenvalue) ** op_expr.exp
         
         # Sum (linearity)
         if isinstance(op_expr, Add):
@@ -2307,7 +2353,7 @@ class _SimpleState:
             for term in op_expr.args:
                 term_op = YawOperator(term, self.algebra)
                 total += self.expect(term_op, _depth=_depth+1)
-            return total
+            return _clean_number(total)
         
         # Product with coefficient
         if isinstance(op_expr, Mul):
@@ -2321,7 +2367,7 @@ class _SimpleState:
                     operator_parts.append(arg)
             
             if not operator_parts:
-                return coeff
+                return _clean_number(coeff)
             
             # Reconstruct operator without coefficient
             from sympy import Mul as SympyMul
@@ -2575,15 +2621,15 @@ class EigenState(State):
         - Off-diagonal terms (returns 0)
         """
         if _depth > 10:
-            return 0.0
+            return _clean_number(0.0)
 
         if isinstance(op, Projector):
             if self.observable == op.base_operator:
                 # Duality: ⟨char(A,j) | proj(A,k) | char(A,j)⟩ = δ_{jk}
                 if self.index == op.eigenspace_index:
-                    return 1.0
+                    return _clean_number(1.0)
                 else:
-                    return 0.0
+                    return _clean_number(0.0)
             # Different operator - fall through to general case
         
         # Normalize operator first
@@ -2593,19 +2639,19 @@ class EigenState(State):
         
         # Case 1: Pure scalar
         if isinstance(op_expr, SympyNumber) or op_expr.is_number:
-            return complex(op_expr)
+            return _clean_number(complex(op_expr))
         
         # Case 2: Identity
         if str(op_expr) == 'I':
-            return 1.0
+            return _clean_number(1.0)
         
         # Case 3: The observable itself
         if op_expr == obs_expr:
-            return self.eigenvalue
+            return _clean_number(self.eigenvalue)
         
         # Case 4: Power of observable
         if isinstance(op_expr, Pow) and op_expr.base == obs_expr:
-            return self.eigenvalue ** op_expr.exp
+            return _clean_number(self.eigenvalue) ** op_expr.exp
         
         # Case 5: Sum (linearity)
         if isinstance(op_expr, Add):
@@ -2613,7 +2659,7 @@ class EigenState(State):
             for term in op_expr.args:
                 term_op = YawOperator(term, self.algebra)
                 total += self.expect(term_op, _depth=_depth+1)
-            return total
+            return _clean_number(total)
         
         # Case 6: Product with coefficient
         if isinstance(op_expr, Mul):
@@ -2627,22 +2673,22 @@ class EigenState(State):
                     operator_parts.append(arg)
             
             if not operator_parts:
-                return coeff
+                return _clean_number(coeff)
             
             if len(operator_parts) == 1:
                 op_part = YawOperator(operator_parts[0], self.algebra)
-                return coeff * self.expect(op_part, _depth=_depth+1)
+                return _clean_number(coeff) * self.expect(op_part, _depth=_depth+1)
             
             # Multiple operators - check if equal to observable
             product_expr = Mul(*operator_parts)
             if product_expr == obs_expr:
-                return coeff * self.eigenvalue
+                return _clean_number(coeff) * self.eigenvalue
             
             # Otherwise off-diagonal
-            return 0.0
+            return _clean_number(0.0)
         
         # Case 7: Other operators (off-diagonal)
-        return 0.0
+        return _clean_number(0.0)
     
     def __str__(self):
         return f"char({self.observable}, {self.index})"
@@ -2797,8 +2843,9 @@ class MixedState(State):
         else:
             normalized_probs = [p for p, _ in self.components]
         
-        return sum(prob * state.expect(operator) 
+        result = sum(prob * state.expect(operator) 
                    for prob, (_, state) in zip(normalized_probs, self.components))
+        return _clean_number(result)
     
     def __repr__(self):
         """String representation with normalized probabilities."""
