@@ -2389,7 +2389,62 @@ class State:
                 return other.__matmul__(self)
         else:
             return self.__matmul__(other)
+
+    def __rmul__(self, scalar):
+        """Scalar multiplication: scalar * state.
+        
+        Creates a weighted state for convex combinations.
+        
+        Args:
+            scalar: Probability weight (should be in [0,1])
+        
+        Returns:
+            MixedState with single component [(scalar, self)]
+        
+        Example:
+            >>> psi0 = char(Z, 0)
+            >>> weighted = 0.7 * psi0  # MixedState([(0.7, psi0)])
+            >>> rho = 0.7*psi0 + 0.3*psi1  # Convex combination!
+        """
+        return MixedState([(scalar, self)], normalize=False)
     
+    def __add__(self, other):
+        """Add states to create convex combinations.
+        
+        Pure states added together create mixed states (with automatic
+        normalization). This enables natural syntax:
+            rho = 0.7*psi0 + 0.3*psi1
+        
+        Args:
+            other: Another State instance
+        
+        Returns:
+            MixedState combining the states
+        
+        Example:
+            >>> psi0 = char(Z, 0)
+            >>> psi1 = char(Z, 1)
+            >>> rho = 0.7*psi0 + 0.3*psi1  # MixedState
+            >>> rho.expect(Z)  # 0.4
+        """
+        if isinstance(other, MixedState):
+            # self is pure, other is mixed
+            # Treat self as MixedState([(1.0, self)])
+            return MixedState([(1.0, self)]) + other
+        elif isinstance(other, State):
+            # Both are pure states (or at least non-MixedState)
+            # Combine into MixedState
+            return MixedState([(1.0, self), (1.0, other)])
+        else:
+            raise TypeError(f"Cannot add State and {type(other)}")
+    
+    def __radd__(self, other):
+        """Right addition (for sum() to work)."""
+        if other == 0:
+            # This handles sum([states]) which starts with 0
+            return self
+        return self.__add__(other)
+        
 class EigenState(State):
     """Eigenstate of an observable: |λ⟩ such that A|λ⟩ = λ|λ⟩.
     
