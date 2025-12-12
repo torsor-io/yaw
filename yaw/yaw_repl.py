@@ -167,7 +167,7 @@ class YawREPL:
                 'comm', 'acomm', 'spec', 'minimal_poly',
                 'help', 'vars', 'algebra', 'links', 'verbose', 'exit', 'quit',
                 'for', 'while', 'if', 'else', 'elif', 'def', 'class',
-                'range', 'len', 'print', 'sqrt',
+                'range', 'len', 'print', 'sqrt', 'MixedState', 'mixed'
             ]
             
             # Add variable names from context
@@ -748,7 +748,7 @@ class YawREPL:
             'CollapsedState', 'TransformedState', 'QFT', 'qft', 'proj',
             'compose_st_branches', 'compose_op_branches',
             'len', 'sum', 'abs', 'max', 'min', 'range', 'enumerate', 'zip',
-            'I', 'Encoding'
+            'I', 'Encoding', 'MixedState', 'mixed'
         }
         
         # Also check if it's an algebra generator
@@ -852,6 +852,8 @@ class YawREPL:
         namespace['gnsMat'] = gnsMat
         namespace['spec'] = spec
         namespace['minimal_poly'] = minimal_poly
+        namespace['MixedState'] = MixedState
+        namespace['mixed'] = mixed
 
         return namespace
     
@@ -1291,7 +1293,7 @@ class YawREPL:
             'compose_st_branches', 'compose_op_branches', 'QFT', 'qft',
             'proj', 'ctrl', 'ctrl_single', 'type', 'list', 'dict', 'set',
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
-            'gnsVec', 'gnsMat', 'spec', 'minimal_poly'
+            'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed'
         }
 
         gens = set()
