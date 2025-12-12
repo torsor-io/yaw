@@ -2251,6 +2251,88 @@ def qubit():
 # STATES
 # ============================================================================
 
+class _SimpleState:
+    """Minimal state for spectrum computation, avoiding circular dependencies.
+    
+    This is an internal helper class used by EigenState.__init__ to compute
+    spectra without triggering infinite recursion through char().
+    
+    It provides a simple eigenstate of a given observable with eigenvalue +1,
+    which is sufficient for GNS matrix construction via gnsMat().
+    """
+    
+    def __init__(self, observable, algebra):
+        """Create simple eigenstate with eigenvalue +1.
+        
+        Args:
+            observable: Observable to be eigenstate of
+            algebra: Associated algebra
+        """
+        self.observable = observable
+        self.algebra = algebra
+        self.eigenvalue = 1.0  # Simple choice: always use +1 eigenvalue
+    
+    def expect(self, op, _depth=0):
+        """Compute expectation value via simple algebraic rules.
+        
+        Uses the fact that this is an eigenstate with eigenvalue +1.
+        """
+        if _depth > 10:
+            return 0.0
+        
+        # Normalize operator
+        op_norm = self.algebra.normalize(op)
+        op_expr = op_norm._expr
+        obs_expr = self.observable._expr
+        
+        # Scalar
+        if isinstance(op_expr, SympyNumber) or (hasattr(op_expr, 'is_number') and op_expr.is_number):
+            return complex(op_expr)
+        
+        # Identity
+        if str(op_expr) == 'I':
+            return 1.0
+        
+        # The observable itself (eigenvalue = 1)
+        if op_expr == obs_expr:
+            return self.eigenvalue
+        
+        # Power of observable
+        if isinstance(op_expr, Pow) and op_expr.base == obs_expr:
+            return self.eigenvalue ** op_expr.exp
+        
+        # Sum (linearity)
+        if isinstance(op_expr, Add):
+            total = 0.0
+            for term in op_expr.args:
+                term_op = YawOperator(term, self.algebra)
+                total += self.expect(term_op, _depth=_depth+1)
+            return total
+        
+        # Product with coefficient
+        if isinstance(op_expr, Mul):
+            coeff = 1.0
+            operator_parts = []
+            
+            for arg in op_expr.args:
+                if isinstance(arg, SympyNumber) or (hasattr(arg, 'is_number') and arg.is_number):
+                    coeff *= complex(arg)
+                else:
+                    operator_parts.append(arg)
+            
+            if not operator_parts:
+                return coeff
+            
+            # Reconstruct operator without coefficient
+            from sympy import Mul as SympyMul
+            op_part = SympyMul(*operator_parts)
+            op_part_yaw = YawOperator(op_part, self.algebra)
+            
+            return coeff * self.expect(op_part_yaw, _depth=_depth+1)
+        
+        # Default: assume off-diagonal or unknown (return 0)
+        return 0.0
+
 class State:
     """Base class for quantum states as functionals."""
     
@@ -2343,8 +2425,38 @@ class EigenState(State):
         self.algebra = algebra
         
         # Compute eigenvalue from spectrum
-        # spec() returns eigenvalues in descending order
-        eigenvalues = spec(observable)
+        # To avoid circular dependency (spec() might try to create char() states),
+        # we create a simple state to pass to spec()
+        # Use a different generator than the observable if possible
+        basis = _get_operator_basis(algebra)
+        
+        # Find a generator different from our observable for the state
+        state_generator = None
+        obs_str = str(observable._expr)
+        for gen in basis:
+            gen_str = str(gen._expr)
+            if gen_str != 'I' and gen_str != obs_str:
+                state_generator = gen
+                break
+        
+        # If we can't find a different generator, use the first non-identity one
+        if state_generator is None:
+            for gen in basis:
+                if str(gen._expr) != 'I':
+                    state_generator = gen
+                    break
+        
+        # Create a simple eigenstate without using char() to avoid recursion
+        # We'll create a minimal state directly
+        if state_generator is not None:
+            # Create a temporary simple state for spectrum computation
+            # This state just needs to define the GNS inner product
+            temp_state = _SimpleState(state_generator, algebra)
+            eigenvalues = spec(observable, temp_state)
+        else:
+            # Fallback: use no state and let spec handle it
+            # This might recurse, but only if there's truly no way to create a state
+            eigenvalues = spec(observable)
         
         if index < 0 or index >= len(eigenvalues):
             raise ValueError(
