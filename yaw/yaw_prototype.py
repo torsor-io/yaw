@@ -4422,3 +4422,176 @@ def _express_in_basis(op, basis, algebra):
                 break
     
     return coeffs
+
+def spec(op, state=None, tolerance=1e-10):
+    """Compute spectrum (eigenvalues) of an operator in descending order.
+    
+    Returns eigenvalues sorted in descending order by:
+    1. Real part (primary)
+    2. Imaginary part (secondary, if real parts are equal within tolerance)
+    
+    The function also computes the minimal polynomial by factoring:
+        p(x) = (x - λ₁)(x - λ₂)...(x - λₖ)
+    where λᵢ are the distinct eigenvalues.
+    
+    Args:
+        op: YawOperator to analyze
+        state: State for GNS representation (optional)
+               If None, attempts to use char(first_gen, 0) or char(first_gen, 1)
+        tolerance: Threshold for considering eigenvalues as distinct (default 1e-10)
+        
+    Returns:
+        List of eigenvalues in descending order
+        
+    Example:
+        >>> alg = qubit()
+        >>> spec(alg.X)  # Returns [1.0, -1.0]
+        >>> spec(alg.Z)  # Returns [1.0, -1.0]
+        >>> spec(alg.I)  # Returns [1.0, 1.0]
+        >>> 
+        >>> # With explicit state
+        >>> psi0 = char(alg.Z, 0)
+        >>> spec(alg.X, psi0)  # Returns [1.0, -1.0]
+    
+    Notes:
+        The minimal polynomial has degree equal to the number of distinct 
+        eigenvalues. For hermitian operators (like Pauli matrices), all
+        eigenvalues are real.
+    """
+    from sympy import Poly, symbols
+    
+    # Get algebra from operator
+    if not hasattr(op, 'algebra') or op.algebra is None:
+        raise ValueError("Operator must have an associated algebra")
+    
+    algebra = op.algebra
+    
+    # If no state provided, create a default one
+    if state is None:
+        # Try to get generators from the algebra (excluding identity)
+        gens = _get_operator_basis(algebra)
+        if not gens:
+            raise ValueError("Cannot create default state: algebra has no generators")
+        
+        # Skip identity operator - look for a non-trivial generator
+        # Prefer generators named X, Z, or similar
+        first_gen = None
+        for gen in gens:
+            gen_str = str(gen)
+            # Skip identity
+            if gen_str == 'I':
+                continue
+            # Prefer single-letter generators (X, Z, etc)
+            if len(gen_str) == 1:
+                first_gen = gen
+                break
+        
+        # If no single-letter generator, use any non-identity generator
+        if first_gen is None:
+            for gen in gens:
+                if str(gen) != 'I':
+                    first_gen = gen
+                    break
+        
+        # If still None, fall back to first generator (even if identity)
+        if first_gen is None:
+            first_gen = gens[0]
+        
+        # Try char(first_gen, 0), fall back to char(first_gen, 1)
+        try:
+            state = char(first_gen, 0)
+        except:
+            try:
+                state = char(first_gen, 1)
+            except:
+                raise ValueError(
+                    "Cannot create default state. Please provide an explicit state."
+                )
+    
+    # Convert operator to matrix using GNS construction
+    M = gnsMat(state, op)
+    
+    # Compute eigenvalues
+    eigenvalues = np.linalg.eigvals(M)
+    
+    # Sort eigenvalues in descending order
+    # Primary sort: real part (descending)
+    # Secondary sort: imaginary part (descending)
+    eigenvalues_sorted = sorted(
+        eigenvalues,
+        key=lambda x: (-x.real, -x.imag)
+    )
+    
+    # Convert to Python floats/complex for cleaner output
+    # Round very small values to zero
+    result = []
+    for ev in eigenvalues_sorted:
+        real_part = ev.real if abs(ev.real) > tolerance else 0.0
+        imag_part = ev.imag if abs(ev.imag) > tolerance else 0.0
+        
+        if imag_part == 0.0:
+            result.append(float(real_part))
+        else:
+            result.append(complex(real_part, imag_part))
+    
+    return result
+
+def minimal_poly(op, state=None, tolerance=1e-10):
+    """Compute minimal polynomial of an operator.
+    
+    The minimal polynomial is the monic polynomial of smallest degree that
+    annihilates the operator: p(A) = 0.
+    
+    For diagonalizable operators, the minimal polynomial is:
+        p(x) = (x - λ₁)(x - λ₂)...(x - λₖ)
+    where λᵢ are the distinct eigenvalues.
+    
+    Args:
+        op: YawOperator to analyze
+        state: State for GNS representation (optional)
+        tolerance: Threshold for considering eigenvalues as distinct
+        
+    Returns:
+        Tuple (polynomial, roots) where:
+        - polynomial: SymPy Poly object representing the minimal polynomial
+        - roots: List of distinct eigenvalues (roots of minimal polynomial)
+        
+    Example:
+        >>> alg = qubit()
+        >>> poly, roots = minimal_poly(alg.X)
+        >>> # poly is (x - 1)(x + 1) = x² - 1
+        >>> # roots is [1.0, -1.0]
+    """
+    from sympy import Poly, symbols, expand
+    
+    # Get spectrum
+    eigenvalues = spec(op, state, tolerance)
+    
+    # Find distinct eigenvalues (roots of minimal polynomial)
+    distinct_eigenvalues = []
+    for ev in eigenvalues:
+        # Check if this eigenvalue is already in the list
+        is_duplicate = False
+        for existing in distinct_eigenvalues:
+            if isinstance(ev, complex) or isinstance(existing, complex):
+                diff = abs(ev - existing)
+            else:
+                diff = abs(ev - existing)
+            
+            if diff < tolerance:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            distinct_eigenvalues.append(ev)
+    
+    # Construct minimal polynomial: p(x) = (x - λ₁)(x - λ₂)...(x - λₖ)
+    x = symbols('x')
+    poly_expr = 1
+    for ev in distinct_eigenvalues:
+        poly_expr *= (x - ev)
+    
+    poly_expr = expand(poly_expr)
+    poly = Poly(poly_expr, x)
+    
+    return poly, distinct_eigenvalues
