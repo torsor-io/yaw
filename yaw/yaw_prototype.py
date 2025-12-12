@@ -32,7 +32,7 @@ __all__ = [
     'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
     'comm', 'acomm',
     'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
-    'gnsVec', 'gnsMat'
+    'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed'
 ]
 
 # ============================================================================
@@ -2689,6 +2689,20 @@ class MixedState(State):
         return sum(prob * state(operator) 
                    for prob, state in self.components)
     
+    def expect(self, operator, _depth=0):
+        """Expectation value (consistent interface)."""
+        return sum(prob * state.expect(operator) 
+                   for prob, state in self.components)
+    
+    def __repr__(self):
+        """String representation."""
+        terms = [f"{prob:.3f}|ψ_{i}⟩⟨ψ_{i}|" 
+                for i, (prob, _) in enumerate(self.components)]
+        return " + ".join(terms)
+    
+    def __str__(self):
+        return self.__repr__()
+    
     def __add__(self, other):
         """Add mixed states (renormalize)."""
         if isinstance(other, MixedState):
@@ -4108,6 +4122,18 @@ def char(observable: YawOperator, index: int) -> State:
         raise ValueError("Observable must be associated with an algebra")
     return EigenState(observable, index, observable.algebra)
 
+
+def mixed(probabilities_and_states):
+    """Create mixed state.
+    
+    Args:
+        probabilities_and_states: List of (prob, state) tuples
+    
+    Example:
+        >>> rho = mixed([(0.7, psi0), (0.3, psi1)])
+    """
+    return MixedState(probabilities_and_states)
+
 def conj_op(U, A):
     """Operator conjugation: U >> A = U† A U.
     
@@ -4671,16 +4697,9 @@ def spec(op, state=None, tolerance=1e-10):
         if first_gen is None:
             first_gen = gens[0]
         
-        # Try char(first_gen, 0), fall back to char(first_gen, 1)
-        try:
-            state = char(first_gen, 0)
-        except:
-            try:
-                state = char(first_gen, 1)
-            except:
-                raise ValueError(
-                    "Cannot create default state. Please provide an explicit state."
-                )
+        # Create a bootstrap eigenstate without calling spec()
+        # to avoid circular dependency
+        state = _create_bootstrap_eigenstate(first_gen, 0, algebra)
     
     # Convert operator to matrix using GNS construction
     M = gnsMat(state, op)
