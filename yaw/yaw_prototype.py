@@ -2340,6 +2340,48 @@ class State:
         """Compute expectation value."""
         raise NotImplementedError("Subclasses must implement expect()")
     
+    def __rmul__(self, scalar):
+        """Scalar multiplication: scalar * state.
+        
+        Creates a weighted state component for building mixed states.
+        
+        Args:
+            scalar: Probability weight (typically 0 ≤ scalar ≤ 1)
+        
+        Returns:
+            MixedState with single component
+        
+        Example:
+            >>> psi = char(Z, 0)
+            >>> weighted = 0.7 * psi  # MixedState([(0.7, psi)])
+        """
+        return MixedState([(scalar, self)])
+    
+    def __add__(self, other):
+        """Addition: state + state.
+        
+        Combines states into a mixed state (with automatic normalization).
+        
+        Args:
+            other: Another State or MixedState
+        
+        Returns:
+            MixedState combining both states
+        
+        Example:
+            >>> rho = 0.7*psi0 + 0.3*psi1
+            >>> # Equivalent to: mixed([(0.7, psi0), (0.3, psi1)])
+        """
+        if isinstance(other, MixedState):
+            # Pure state + MixedState
+            # Convert self to MixedState and add
+            return MixedState([(1.0, self)]) + other
+        elif isinstance(other, State):
+            # Two pure states - combine with equal weight, then normalize
+            return MixedState([(1.0, self), (1.0, other)])
+        else:
+            raise TypeError(f"Cannot add State and {type(other)}")
+    
     def __ror__(self, operator):
         """Enable A | state syntax."""
         return self.expect(operator)
@@ -2406,7 +2448,7 @@ class State:
             >>> weighted = 0.7 * psi0  # MixedState([(0.7, psi0)])
             >>> rho = 0.7*psi0 + 0.3*psi1  # Convex combination!
         """
-        return MixedState([(scalar, self)], normalize=False)
+        return MixedState([(scalar, self)])
     
     def __add__(self, other):
         """Add states to create convex combinations.
@@ -2727,16 +2769,11 @@ class MixedState(State):
     """
     
     def __init__(self, components):
-        """
+        """Create mixed state from probability-state pairs.
+        
         Args:
             components: List of (probability, state) tuples
-                       e.g., [(0.2, psi0), (0.8, psi1)]
         """
-        # Validate probabilities sum to 1
-        total = sum(p for p, _ in components)
-        if not abs(total - 1.0) < 1e-10:
-            raise ValueError(f"Probabilities must sum to 1, got {total}")
-        
         self.components = components
     
     def __call__(self, operator):
@@ -2745,30 +2782,50 @@ class MixedState(State):
                    for prob, state in self.components)
     
     def expect(self, operator, _depth=0):
-        """Expectation value (consistent interface)."""
+        """Expectation value with normalized probabilities.
+        
+        For mixed state ρ = Σᵢ pᵢ |ψᵢ⟩⟨ψᵢ|:
+            ⟨A⟩_ρ = Tr(ρ A) = Σᵢ pᵢ ⟨ψᵢ|A|ψᵢ⟩
+        """
+        # Normalize probabilities
+        total = sum(p for p, _ in self.components)
+        if total > 1e-10:
+            normalized_probs = [p/total for p, _ in self.components]
+        else:
+            normalized_probs = [p for p, _ in self.components]
+        
         return sum(prob * state.expect(operator) 
-                   for prob, state in self.components)
+                   for prob, (_, state) in zip(normalized_probs, self.components))
     
     def __repr__(self):
-        """String representation."""
+        """String representation with normalized probabilities."""
+        # Normalize for display
+        total = sum(p for p, _ in self.components)
+        if total > 1e-10:
+            normalized = [(p/total, s) for p, s in self.components]
+        else:
+            normalized = self.components
+        
         terms = [f"{prob:.3f}|ψ_{i}⟩⟨ψ_{i}|" 
-                for i, (prob, _) in enumerate(self.components)]
+                for i, (prob, _) in enumerate(normalized)]
         return " + ".join(terms)
     
     def __str__(self):
         return self.__repr__()
     
     def __add__(self, other):
-        """Add mixed states (renormalize)."""
+        """Add mixed states with normalization."""
         if isinstance(other, MixedState):
-            # Combine component lists
+            # Combine components
             all_components = self.components + other.components
-            # Renormalize
+            # Normalize
             total = sum(p for p, _ in all_components)
-            normalized = [(p/total, s) for p, s in all_components]
-            return MixedState(normalized)
+            if total > 1e-10:  # Avoid division by zero
+                normalized = [(p/total, s) for p, s in all_components]
+                return MixedState(normalized)
+            else:
+                return MixedState(all_components)
         elif isinstance(other, State):
-            # Treat pure state as mixed state with p=1
             return self + MixedState([(1.0, other)])
         else:
             raise TypeError(f"Cannot add MixedState and {type(other)}")
