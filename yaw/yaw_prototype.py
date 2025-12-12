@@ -2311,11 +2311,23 @@ class State:
 class EigenState(State):
     """Eigenstate of an observable: |λ⟩ such that A|λ⟩ = λ|λ⟩.
     
+    The eigenvalue λ is determined by the index into the spectrum:
+        eigenvalue = spec(observable)[index]
+    
+    where spec() returns eigenvalues in descending order.
+    
     Attributes:
         observable: The operator this is an eigenstate of
-        index: Position in spectrum (0 = largest eigenvalue)
+        index: Position in descending spectrum (0 = largest eigenvalue)
         algebra: Associated algebra
-        eigenvalue: The eigenvalue (1.0 or -1.0 for now)
+        eigenvalue: The eigenvalue from spec(observable)[index]
+    
+    Example:
+        >>> alg = qubit()
+        >>> psi_0 = EigenState(alg.Z, 0, alg)  # Largest eigenvalue (+1)
+        >>> psi_1 = EigenState(alg.Z, 1, alg)  # Smallest eigenvalue (-1)
+        >>> psi_0.eigenvalue  # 1.0
+        >>> psi_1.eigenvalue  # -1.0
     """
     
     def __init__(self, observable: YawOperator, index: int, algebra):
@@ -2329,9 +2341,18 @@ class EigenState(State):
         self.observable = observable
         self.index = index
         self.algebra = algebra
-        # For now, hardcode Pauli-like eigenvalues
-        # TODO: Compute from minimal polynomial
-        self.eigenvalue = 1.0 if index == 0 else -1.0
+        
+        # Compute eigenvalue from spectrum
+        # spec() returns eigenvalues in descending order
+        eigenvalues = spec(observable)
+        
+        if index < 0 or index >= len(eigenvalues):
+            raise ValueError(
+                f"Index {index} out of range for spectrum with "
+                f"{len(eigenvalues)} eigenvalues: {eigenvalues}"
+            )
+        
+        self.eigenvalue = eigenvalues[index]
     
     def expect(self, op: YawOperator, _depth=0) -> complex:
         """Compute expectation value via algebraic simplification.
@@ -3945,15 +3966,31 @@ def tensor_power(op, n):
 def char(observable: YawOperator, index: int) -> State:
     """Create eigenstate (characteristic state) of observable.
     
+    The eigenstate corresponds to the eigenvalue at position `index` in the
+    spectrum returned by spec(observable), which lists eigenvalues in 
+    descending order.
+    
     Args:
         observable: Operator to be eigenstate of
-        index: Position in spectrum (0 = largest eigenvalue)
+        index: Position in descending spectrum (0 = largest eigenvalue)
+               For example, if spec(X) = [1.0, -1.0], then:
+               - char(X, 0) is the +1 eigenstate
+               - char(X, 1) is the -1 eigenstate
         
     Returns:
-        EigenState instance
+        EigenState instance with eigenvalue = spec(observable)[index]
         
     Raises:
         ValueError: If observable has no associated algebra
+        ValueError: If index is out of range for the spectrum
+        
+    Example:
+        >>> alg = qubit()
+        >>> spec(alg.Z)  # [1.0, -1.0]
+        >>> psi_0 = char(alg.Z, 0)  # |0⟩ state (eigenvalue +1)
+        >>> psi_1 = char(alg.Z, 1)  # |1⟩ state (eigenvalue -1)
+        >>> psi_0.expect(alg.Z)  # Returns 1.0
+        >>> psi_1.expect(alg.Z)  # Returns -1.0
     """
     if not observable.algebra:
         raise ValueError("Observable must be associated with an algebra")
@@ -4422,6 +4459,31 @@ def _express_in_basis(op, basis, algebra):
                 break
     
     return coeffs
+
+def _create_bootstrap_eigenstate(observable, index, algebra):
+    """Create an eigenstate without calling spec() (avoids circular dependency).
+    
+    This is used internally by spec() to create a default state for the
+    GNS construction. It uses a simple heuristic for the eigenvalue
+    (1.0 for index 0, -1.0 otherwise) which is sufficient for computing
+    the spectrum via gnsMat.
+    
+    Args:
+        observable: Operator to be eigenstate of
+        index: Index (0 or 1 typically)
+        algebra: Associated algebra
+        
+    Returns:
+        EigenState with bootstrap eigenvalue
+    """
+    # Create an EigenState but bypass the __init__ that calls spec()
+    state = object.__new__(EigenState)
+    state.observable = observable
+    state.index = index
+    state.algebra = algebra
+    # Use bootstrap eigenvalue (doesn't need to be exact for GNS construction)
+    state.eigenvalue = 1.0 if index == 0 else -1.0
+    return state
 
 def spec(op, state=None, tolerance=1e-10):
     """Compute spectrum (eigenvalues) of an operator in descending order.
