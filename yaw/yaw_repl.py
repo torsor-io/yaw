@@ -9,6 +9,21 @@ from yaw_prototype import *
 from sympy import sqrt
 import sys
 import traceback
+import os
+
+# Import readline for command history and line editing
+# This provides backspace, arrow keys, history navigation, etc.
+try:
+    import readline
+    READLINE_AVAILABLE = True
+except ImportError:
+    # Windows doesn't have readline by default
+    try:
+        import pyreadline3 as readline
+        READLINE_AVAILABLE = True
+    except ImportError:
+        READLINE_AVAILABLE = False
+        print("Warning: readline not available. History and line editing disabled.")
 
 class VariableStore:
     """Abstract interface for variable storage.
@@ -86,6 +101,103 @@ class YawREPL:
 
         self.variables.unlink('$gens', '_gens')
         self.variables.unlink('$rels', '_rels')
+        
+        # Set up readline for history and line editing
+        self._setup_readline()
+    
+    def _setup_readline(self):
+        """Set up readline for command history and line editing.
+        
+        Features:
+        - Command history (up/down arrows)
+        - Line editing (backspace, left/right arrows, etc.)
+        - History persistence to ~/.yaw_history
+        - Tab completion for yaw keywords
+        """
+        if not READLINE_AVAILABLE:
+            return
+        
+        # Set up history file
+        self.history_file = os.path.expanduser('~/.yaw_history')
+        
+        # Load existing history
+        if os.path.exists(self.history_file):
+            try:
+                readline.read_history_file(self.history_file)
+            except Exception as e:
+                # Silently ignore history load errors
+                pass
+        
+        # Set history length (number of commands to remember)
+        readline.set_history_length(1000)
+        
+        # Set up tab completion
+        readline.parse_and_bind('tab: complete')
+        
+        # Set up completer function
+        readline.set_completer(self._tab_completer)
+        
+        # Configure delimiters for completion
+        # This determines what characters break words for completion
+        readline.set_completer_delims(' \t\n=()[]{}@|><+-*/,;:')
+    
+    def _tab_completer(self, text, state):
+        """Tab completion function for yaw REPL.
+        
+        Completes:
+        - yaw keywords and functions
+        - Variable names
+        - Common operators
+        
+        Args:
+            text: Current text to complete
+            state: Completion state (0 for first call, increments)
+        
+        Returns:
+            Completion string or None
+        """
+        if state == 0:
+            # First call: generate list of completions
+            
+            # Common yaw keywords and functions
+            keywords = [
+                'char', 'proj', 'qft', 'ctrl', 'tensor',
+                'opChannel', 'stChannel', 'opMeasure', 'stMeasure',
+                'opBranches', 'stBranches',
+                'comm', 'acomm', 'spec', 'minimal_poly',
+                'help', 'vars', 'algebra', 'links', 'verbose', 'exit', 'quit',
+                'for', 'while', 'if', 'else', 'elif', 'def', 'class',
+                'range', 'len', 'print', 'sqrt',
+            ]
+            
+            # Add variable names from context
+            var_names = self.variables.list_vars()
+            
+            # Combine all possible completions
+            all_completions = keywords + var_names
+            
+            # Filter to those matching the current text
+            self.completion_matches = [
+                cmd for cmd in all_completions 
+                if cmd.startswith(text)
+            ]
+        
+        # Return the next match, or None if no more matches
+        try:
+            return self.completion_matches[state]
+        except IndexError:
+            return None
+    
+    def _save_history(self):
+        """Save command history to file."""
+        if not READLINE_AVAILABLE:
+            return
+        
+        try:
+            readline.write_history_file(self.history_file)
+        except Exception as e:
+            # Silently ignore history save errors
+            pass
 
     def is_statement(self, line):
         """Check if line starts a Python statement (not expression)."""
@@ -1266,37 +1378,45 @@ class YawREPL:
         print("─" * 60)
         print("Type 'help' or 'credits' for more information.")
         
-        while True:
-            try:
-                # Get input
-                if self.in_statement:
-                    prompt = "... "
-                else:
-                    prompt = "yaw> "
+        # Show readline status
+        if READLINE_AVAILABLE:
+            print("✓ Command history enabled (saved to ~/.yaw_history)")
+        
+        try:
+            while True:
+                try:
+                    # Get input
+                    if self.in_statement:
+                        prompt = "... "
+                    else:
+                        prompt = "yaw> "
 
-                line = input(prompt)
+                    line = input(prompt)
+                        
+                    # Check for exit
+                    if line.strip() in ['exit', 'quit']:
+                        print("Goodbye!")
+                        break
                     
-                # Check for exit
-                if line.strip() in ['exit', 'quit']:
-                    print("Goodbye!")
+                    # Evaluate
+                    result = self.eval_line(line)
+                    
+                    # Display
+                    if result is not None:
+                        self._display(result)
+                        
+                except KeyboardInterrupt:
+                    print("\nUse 'exit' or 'quit' to exit")
+                except EOFError:
+                    print("\nGoodbye!")
                     break
-                
-                # Evaluate
-                result = self.eval_line(line)
-                
-                # Display
-                if result is not None:
-                    self._display(result)
-                    
-            except KeyboardInterrupt:
-                print("\nUse 'exit' or 'quit' to exit")
-            except EOFError:
-                print("\nGoodbye!")
-                break
-            except Exception as e:
-                print(f"Error: {e}")
-                if self.verbose:
-                    traceback.print_exc()
+                except Exception as e:
+                    print(f"Error: {e}")
+                    if self.verbose:
+                        traceback.print_exc()
+        finally:
+            # Always save history on exit
+            self._save_history()
 
     def _show_credits(self):
         """Display credits."""
@@ -1318,6 +1438,16 @@ class YawREPL:
       vars              List all variables/operators
       links             Show context links
       verbose on/off    Toggle verbose normalization output
+    
+    READLINE FEATURES (if available):
+      ↑ / ↓             Navigate command history
+      ← / →             Move cursor in line
+      Backspace         Delete character before cursor
+      Tab               Auto-complete keywords and variables
+      Ctrl+A / Ctrl+E   Jump to beginning/end of line
+      Ctrl+K            Delete from cursor to end of line
+      Ctrl+U            Delete entire line
+      History saved to: ~/.yaw_history
 
     ALGEBRA DEFINITION:
       $alg = <X, Z | herm, unit, anti>
