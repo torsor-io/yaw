@@ -1315,6 +1315,46 @@ class YawREPL:
 
         return gens
         
+    def _clean_number(self, num, decimals=10):
+        """Clean numerical noise from numbers.
+        
+        Args:
+            num: Number to clean (int, float, or complex)
+            decimals: Number of decimal places to round to (default 10)
+        
+        Returns:
+            Cleaned number with trailing zeros removed
+        """
+        if isinstance(num, (int, bool)):
+            return num
+        
+        if isinstance(num, float):
+            # Round to remove noise
+            rounded = round(num, decimals)
+            # If very close to zero, make it exactly zero
+            if abs(rounded) < 10**(-decimals):
+                return 0.0
+            # If very close to an integer, make it an integer
+            if abs(rounded - round(rounded)) < 10**(-decimals):
+                return int(round(rounded))
+            return rounded
+        
+        if isinstance(num, complex):
+            # Clean real and imaginary parts separately
+            real = self._clean_number(num.real, decimals)
+            imag = self._clean_number(num.imag, decimals)
+            
+            # If imaginary part is zero, return just the real part
+            if imag == 0:
+                return real
+            # If real part is zero, return just imaginary
+            if real == 0:
+                return complex(0, imag)
+            
+            return complex(real, imag)
+        
+        return num
+    
     def _display(self, result):
         """Pretty print result.
 
@@ -1362,7 +1402,7 @@ class YawREPL:
             return
 
         if isinstance(result, (int, float, complex)):
-            print(result)
+            print(self._clean_number(result))
             return
 
         # Default: use Python's str
