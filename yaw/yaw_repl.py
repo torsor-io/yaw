@@ -1,5 +1,5 @@
 """
-yaw REPL: Interactive quantum programming interface
+yaw REPL: Interpreter for algebraic quantum programming
 
 Minimal REPL that can be incrementally upgraded to support
 full context management, braiding, and advanced features.
@@ -279,7 +279,7 @@ class YawREPL:
                 namespace = self._build_namespace()
                 
                 # Evaluate subscript expression
-                subscript_value = eval(subscript_expr, {"__builtins__": {}}, namespace)
+                subscript_value = eval(subscript_expr, namespace, namespace)
                 
                 # Create subscripted variable name
                 return f"{var_name}_{subscript_value}"
@@ -348,7 +348,7 @@ class YawREPL:
             namespace = self._build_namespace()
 
             # Evaluate iterable
-            iterable = eval(iterable_expr, {"__builtins__": {}}, namespace)
+            iterable = eval(iterable_expr, namespace, namespace)
 
             result_list = []
 
@@ -360,7 +360,7 @@ class YawREPL:
                 var_name = self._substitute_subscripts_in_string(var_template, namespace)
 
                 # Evaluate value expression
-                value = eval(value_expr, {"__builtins__": {}}, namespace)
+                value = eval(value_expr, namespace, namespace)
 
                 # Store variable
                 namespace[var_name] = value
@@ -389,7 +389,7 @@ class YawREPL:
 
             try:
                 # Evaluate subscript expression with given namespace
-                subscript_value = eval(subscript_expr, {"__builtins__": {}}, namespace)
+                subscript_value = eval(subscript_expr, namespace, namespace)
                 return f"{var_name}_{subscript_value}"
             except:
                 # If evaluation fails, leave as-is
@@ -425,7 +425,7 @@ class YawREPL:
             namespace = self._build_namespace()
 
             # Evaluate iterable
-            iterable = eval(iterable_expr, {"__builtins__": {}}, namespace)
+            iterable = eval(iterable_expr, namespace, namespace)
 
             result_list = []
 
@@ -437,7 +437,7 @@ class YawREPL:
                 expr = self._substitute_subscripts_in_string(expr_template, namespace)
 
                 # Evaluate expression
-                value = eval(expr, {"__builtins__": {}}, namespace)
+                value = eval(expr, namespace, namespace)
 
                 result_list.append(value)
 
@@ -552,7 +552,7 @@ class YawREPL:
                 else:
                     try:
                         namespace = self._build_namespace()
-                        result = eval(rhs, {"__builtins__": {}}, namespace)
+                        result = eval(rhs, namespace, namespace)
 
                         # Check if result is an Algebra
                         if isinstance(result, Algebra):
@@ -695,7 +695,9 @@ class YawREPL:
 
         try:
             # Execute the statement
-            exec(full_statement, {"__builtins__": {}}, namespace)
+            # CRITICAL: Pass namespace as BOTH globals and locals
+            # This allows defined functions to access REPL variables
+            exec(full_statement, namespace, namespace)
 
             # Update variables with any new definitions
             # Extract new variables that were created
@@ -927,7 +929,7 @@ class YawREPL:
         namespace['ctrl_single'] = ctrl_single
         
         # Evaluate expression
-        result = eval(expr_str, {"__builtins__": {}}, namespace)
+        result = eval(expr_str, namespace, namespace)
 
         # Normalize with temporary algebra
         if isinstance(result, YawOperator):
@@ -1002,7 +1004,7 @@ class YawREPL:
         namespace['ctrl_single'] = ctrl_single
         
         # Evaluate expression
-        result = eval(expr_str, {"__builtins__": {}}, namespace)
+        result = eval(expr_str, namespace, namespace)
 
         # Normalize with temporary algebra
         if isinstance(result, YawOperator):
@@ -1238,7 +1240,7 @@ class YawREPL:
             namespace = self._build_namespace()
         
             # Evaluate
-            result = eval(expr, {"__builtins__": {}}, namespace)
+            result = eval(expr, namespace, namespace)
             
             return result
 
