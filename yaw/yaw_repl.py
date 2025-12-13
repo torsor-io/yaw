@@ -568,30 +568,9 @@ class YawREPL:
                             # Add identity
                             self.variables.set('I', result.I)
 
-                            # Better relation display
-                            gens = ', '.join(result.generators.keys())
-                            rels = []
-
-                            # Check each relation carefully
-                            if hasattr(result, 'hermitian') and result.hermitian:
-                                rels.append('herm')
-
-                            if hasattr(result, 'unitary') and result.unitary:
-                                rels.append('unit')
-
-                            if hasattr(result, 'power_mod') and result.power_mod:
-                                rels.append(f'pow({result.power_mod})')
-
-                            if hasattr(result, 'anticommuting'):
-                                if result.anticommuting is True:
-                                    rels.append('anti')
-                                elif isinstance(result.anticommuting, list) and result.anticommuting:
-                                    rels.append('anti')
-
-                            if hasattr(result, 'braiding_phase') and result.braiding_phase is not None:
-                                rels.append(f'braid({result.braiding_phase})')
-
-                            rels_str = ', '.join(rels) if rels else '...'
+                            # Display the algebra with its original relation specs
+                            gens = ', '.join(result.generator_names)
+                            rels_str = ', '.join(result.relation_specs)
                             return f"Created algebra: <{gens} | {rels_str}>"
 
                         else:
