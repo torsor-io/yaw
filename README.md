@@ -58,6 +58,12 @@ pip install -r requirements.txt  # Just sympy and numpy for now
 python -m yaw.yaw_repl < examples/hello_world.yaw
 ```
 
+### Read the tutorial
+
+Check out the
+[tutorial](https://torsor.io/assets/library/yaw/yaw011.html) if you
+want a more leisurely/in-depth treatment!
+
 ### Three ways to use `yaw`
 
 **1. Interactive REPL**
