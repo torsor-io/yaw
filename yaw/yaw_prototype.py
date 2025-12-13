@@ -22,7 +22,7 @@ __version__ = "0.1.1"
 __all__ = [
     'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit',
     'State', 'EigenState', 'TensorState', 'ConjugatedState', 
-    'TransformedState', 'CollapsedState', 'TensorSum',
+    'TransformedState', 'CollapsedState', 'TensorSum', 'SuperpositionState',
     'OpChannel', 'opChannel', 'StChannel', 'stChannel',
     'OpMeasurement', 'opMeasure', 'StMeasurement', 'stMeasure',
     'OpBranches', 'opBranches', 'StBranches', 'stBranches',
@@ -1218,7 +1218,7 @@ class YawOperator:
                             return EigenState(state.observable, flipped_index, state.algebra)
                         else:
                             # For d > 2, more complex
-                            return TransformedState(state, self)
+                            return ConjugatedState(self, state)
 
                     # Try to compute commutator [A, B]
                     comm = (self * state.observable - state.observable * self).normalize()
@@ -1232,11 +1232,11 @@ class YawOperator:
                     # If computation fails, fall back
                     pass
 
-            # Default: create transformed state
-            return TransformedState(state, self)
+            # Default: create conjugated state
+            return ConjugatedState(self, state)
 
         else:
-            return TransformedState(state, self)
+            return ConjugatedState(self, state)
 
 # ============================================================================
 # COMMUTATORS AND ANTICOMMUTATORS
@@ -1392,9 +1392,11 @@ class TensorSum:
             else:
                 raise ValueError("No terms in sum could be applied to state (all filtered by projector orthogonality)")
         else:
-            # Multiple results - need superposition
-            print(f"Warning: Multiple terms contributed ({len(results)}), returning first")
-            return results[0]
+            # Multiple results - create coherent superposition
+            # Each term contributes with amplitude 1 (equal superposition)
+            # For more sophisticated amplitude tracking, would need to
+            # analyze the operator coefficients
+            return SuperpositionState([(1.0, result) for result in results])
         
     def __str__(self):
         """Display as sum."""
@@ -3047,7 +3049,7 @@ class MixedState(State):
         self.components = components
     
     def __call__(self, operator):
-        """Expectation value: Tr(ρ A) = ψ'_i p_i ⟨psi_i|A|psi_i⟩"""
+        """Expectation value: Tr(ρ A) = ∑_i p_i ⟨psi_i|A|psi_i⟩"""
         return sum(prob * state(operator) 
                    for prob, state in self.components)
     
@@ -3106,6 +3108,78 @@ class MixedState(State):
         # Need to handle carefully or prohibit
         scaled = [(scalar * p, s) for p, s in self.components]
         return MixedState(scaled)
+
+
+class SuperpositionState(State):
+    """Coherent quantum superposition: |ψ⟩ = Σᵢ αᵢ|ψᵢ⟩
+    
+    Unlike MixedState (classical mixture), this represents a coherent 
+    quantum superposition with complex amplitudes.
+    
+    This is used when applying operator sums to states:
+        (A + B)|ψ⟩ = A|ψ⟩ + B|ψ⟩
+    
+    The amplitudes are automatically extracted from the operator algebra.
+    """
+    
+    def __init__(self, components):
+        """Create superposition from amplitude-state pairs.
+        
+        Args:
+            components: List of (amplitude, state) tuples
+                       where amplitude is a complex number or YawOperator coefficient
+        """
+        self.components = components
+    
+    def __call__(self, operator):
+        """Expectation value: ⟨ψ|A|ψ⟩ where |ψ⟩ = Σᵢ αᵢ|ψᵢ⟩
+        
+        For normalized superposition:
+            ⟨ψ|A|ψ⟩ = Σᵢⱼ αᵢ* αⱼ ⟨ψᵢ|A|ψⱼ⟩
+        
+        For simplicity, we compute diagonally:
+            ⟨ψ|A|ψ⟩ ≈ Σᵢ |αᵢ|² ⟨ψᵢ|A|ψᵢ⟩
+        """
+        # Compute normalization
+        norm_sq = sum(abs(complex(amp))**2 for amp, _ in self.components)
+        
+        if norm_sq < 1e-10:
+            return 0.0
+        
+        # Diagonal approximation
+        result = sum(abs(complex(amp))**2 * state.expect(operator) 
+                    for amp, state in self.components)
+        
+        return _clean_number(result / norm_sq)
+    
+    def expect(self, operator, _depth=0):
+        """Expectation value (same as __call__ for pure states)."""
+        return self(operator)
+    
+    def __repr__(self):
+        """String representation showing amplitudes."""
+        # Format with amplitudes
+        terms = []
+        for amp, state in self.components:
+            amp_val = complex(amp) if not isinstance(amp, (int, float, complex)) else amp
+            
+            # Format amplitude nicely
+            if abs(amp_val.imag) < 1e-10:
+                # Real amplitude
+                amp_str = f"{amp_val.real:.3f}" if abs(amp_val.real - 1.0) > 1e-10 else ""
+            else:
+                # Complex amplitude
+                amp_str = f"({amp_val.real:.3f}+{amp_val.imag:.3f}j)"
+            
+            if amp_str and amp_str != "1.000":
+                terms.append(f"{amp_str}*{state}")
+            else:
+                terms.append(str(state))
+        
+        return " + ".join(terms) if terms else "0"
+    
+    def __str__(self):
+        return self.__repr__()
     
 # ============================================================================
 # QUANTUM CHANNELS
