@@ -3,7 +3,7 @@
 ![Status](https://img.shields.io/badge/status-research%20prototype-yellow)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Python](https://img.shields.io/badge/python-3.7+-green)
-![Version](https://img.shields.io/badge/version-0.1.0-orange)
+![Version](https://img.shields.io/badge/version-0.1.1-orange)
 
 **What if you could code with high-school algebra rather than painstaking circuit descriptions?**
 
@@ -242,7 +242,7 @@ We plan to add more (to facilitate abstract manipulation) in future.
 
 ### Status
 
-**Current: v0.1.0 (Initial Public Release)**
+**Current: v0.1.1**
 
 `yaw` is currently a research prototype to showcase algebraic quantum
 programming. This release focuses on single-system operations, with
@@ -251,20 +251,18 @@ partial support for tensor products and multi-system operations.
 **What works:**
 - ✅ Operator algebra with symbolic normalization
 - ✅ State functionals and eigenstates
-- ✅ Unitary conjugation (`<<`, `>>` for single operators)
+- ✅ Conjugation of operators and states (`<<`, `>>`)
 - ✅ GNS construction (operators → Hilbert space matrices/vectors)
 - ✅ Projective measurement with branching
 - ✅ REPL with algebra definition syntax
 - ✅ Compyler (`.yaw` → `.py`)
 - ✅ Basic tensor products
 
-**Known limitations:**
-- Tensor product conjugation (e.g., `(H @ I) >> A`) not yet implemented
-- Multi-qubit controlled operations need automated spectral decomposition
-
 **Examples:**
 - `hello_world.yaw` goes through basic concepts
-- Coming soon: Bell states, Grover, HSP, basic QEC
+- [Tutorial](https://torsor.io/assets/library/yaw/yaw011.html) covers
+  Bell state creation
+- Coming soon: Grover, HSP, basic QEC
 
 ### Roadmap
 
@@ -274,13 +272,13 @@ partial support for tensor products and multi-system operations.
 - Comprehensive test suite
 - Jupyter notebooks
 
-**v0.3.0 (Q2-3 2026)**: *Oscillators and advanced codes*
+**v0.2.0 (Q1 2026)**: *Oscillators and advanced codes*
 - Oscillator algebra (continuous variables)
 - Surface codes and topological QEC
 - Compiler optimization passes
 - Stabilizer code automation
 
-**v0.4.0 (Q1 2027)**: *λix integration*
+**v0.3.0 (Q4 2026)**: *λix integration*
 - Hardware-agnostic backend (λix)
 - Type system for quantum programs
 - Production-ready tooling
