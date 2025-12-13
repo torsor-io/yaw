@@ -1275,8 +1275,13 @@ def acomm(A, B):
 class TensorSum:
     """Sum of tensor products: A⊗B + C⊗D + ..."""
     
-    def __init__(self, terms):
-        """Create sum of terms."""
+    def __init__(self, terms, _skip_normalize=False):
+        """Create sum of terms.
+        
+        Args:
+            terms: List of terms to sum
+            _skip_normalize: Internal flag to skip auto-normalization (prevents recursion)
+        """
         self.terms = list(terms)
         
         # Flatten nested TensorSums
@@ -1287,6 +1292,20 @@ class TensorSum:
             else:
                 flattened.append(term)
         self.terms = flattened
+        
+        # Auto-normalize unless explicitly skipped (used internally by normalize())
+        if not _skip_normalize and len(self.terms) > 1:
+            normalized = self.normalize()
+            # If normalize returns a TensorSum, use its terms
+            # (avoid double-wrapping)
+            if isinstance(normalized, TensorSum):
+                self.terms = normalized.terms
+            elif normalized == 0:
+                # Everything cancelled - represent as empty sum
+                self.terms = []
+            else:
+                # Single term - wrap it
+                self.terms = [normalized]
 
     def __invert__(self):
         """Enable ~A syntax for normalization."""
@@ -1360,6 +1379,8 @@ class TensorSum:
         
     def __str__(self):
         """Display as sum."""
+        if not self.terms:
+            return "0"
         return " + ".join(str(t) for t in self.terms)
     
     def __repr__(self):
@@ -1591,7 +1612,8 @@ class TensorSum:
         elif len(combined) == 1:
             return combined[0]
         else:
-            return TensorSum(combined)
+            # Pass _skip_normalize=True to prevent infinite recursion
+            return TensorSum(combined, _skip_normalize=True)
 
     def __matmul__(self, other):
         """Tensor product: (A + B + ...) @ C
