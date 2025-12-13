@@ -1423,7 +1423,7 @@ class YawREPL:
         
         # Show readline status
         if READLINE_AVAILABLE:
-            print("[Command history enabled - saved to ~/.yaw_history]")
+            print("[Command history saved to ~/.yaw_history]")
         
         try:
             while True:
