@@ -1836,16 +1836,20 @@ class TensorProduct:
     def adjoint(self):
         """Hermitian conjugate of tensor product: (A⊗B)† = A†⊗B†
         
-        Distributes adjoint over each factor.
+        Distributes adjoint over each factor and automatically normalizes.
         
         Example:
-            >>> (X@Y).adjoint()  # Returns X†⊗Y†
+            >>> (X@Y).adjoint()  # Returns X†⊗Y† (normalized)
             >>> (H@H).H  # Same as (H@H).adjoint()
         """
         adjoint_factors = []
         for factor in self.factors:
             if hasattr(factor, 'adjoint'):
-                adjoint_factors.append(factor.adjoint())
+                adj = factor.adjoint()
+                # Normalize each factor
+                if hasattr(adj, 'normalize'):
+                    adj = adj.normalize()
+                adjoint_factors.append(adj)
             else:
                 # If factor doesn't have adjoint, keep it as is
                 adjoint_factors.append(factor)
@@ -1906,16 +1910,17 @@ class TensorProduct:
         This distributes conjugation across factors:
         - Each U_i conjugates the corresponding A_i
         - Preserves tensor product structure
+        - Automatically normalizes each factor
         
         Args:
             other: Operator to conjugate (YawOperator, TensorProduct, or TensorSum)
             
         Returns:
-            Conjugated operator
+            Conjugated operator (automatically normalized)
             
         Example:
-            >>> (H@H) >> (X@X)  # Returns Z@Z
-            >>> (H@I) >> (X@Y)  # Returns Z@Y
+            >>> (H@H) >> (X@X)  # Returns Z@Z (auto-normalized)
+            >>> (H@I) >> (X@Y)  # Returns Z@Y (auto-normalized)
         
         Note:
             This only works when self and other have compatible tensor structure.
@@ -1941,6 +1946,10 @@ class TensorProduct:
                     # Manual conjugation: U† A U
                     u_adj = u_factor.adjoint() if hasattr(u_factor, 'adjoint') else u_factor
                     conjugated = u_adj * a_factor * u_factor
+                
+                # Normalize each factor before adding to result
+                if hasattr(conjugated, 'normalize'):
+                    conjugated = conjugated.normalize()
                 
                 conjugated_factors.append(conjugated)
             
@@ -2007,13 +2016,16 @@ class TensorProduct:
                     f"{len(self.factors)} vs {len(other.factors)}"
                 )
             
-            # Element-wise multiplication: (A⊗B) * (C⊗D) = (A*C) ⊗ (B*D)
+            # Element-wise multiplication: (AâŠ—B) * (CâŠ—D) = (A*C) âŠ— (B*D)
             new_factors = []
             for f1, f2 in zip(self.factors, other.factors):
-                new_factors.append(f1 * f2)
+                product = f1 * f2
+                # Normalize each factor
+                if hasattr(product, 'normalize'):
+                    product = product.normalize()
+                new_factors.append(product)
             
             return TensorProduct(new_factors)
-        
         else:
             raise TypeError(f"Cannot multiply TensorProduct with {type(other)}")
     
