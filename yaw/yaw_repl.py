@@ -1446,7 +1446,7 @@ class YawREPL:
         """Display credits."""
         credit_text = """
 ────────────────────────────────────────────────────────────
-    Made with love, coffee, and Claude by David Wakeham.
+    Made by David Wakeham for Torsor Labs.
 ────────────────────────────────────────────────────────────
    """
         return credit_text.strip()
