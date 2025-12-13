@@ -28,7 +28,7 @@ __all__ = [
     'OpBranches', 'opBranches', 'StBranches', 'stBranches',
     'compose_st_branches', 'compose_op_branches',
     'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
-    'QFT', 'qft', 'proj', 'ctrl', 'ctrl_single',
+    'QFT', 'qft', 'proj', 'proj_general', 'ctrl', 'ctrl_single',
     'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
     'comm', 'acomm',
     'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
@@ -4091,6 +4091,112 @@ def qft(gen_x, gen_z):
 # ============================================================================
 # PROJECTORS (MINIMAL POLYNOMIAL METHOD)
 # ============================================================================
+
+def proj_general(operator, eigenvalue, state=None, tolerance=1e-10):
+    """Construct projector onto eigenspace using minimal polynomial.
+    
+    This implements the general recipe from spectral theory:
+    Given an operator N with minimal polynomial p_min(x) = ∏ᵢ(x - λᵢ),
+    the projector onto the eigenspace of λⱼ is:
+    
+        Πⱼ = pⱼ(N) / pⱼ(λⱼ)
+    
+    where pⱼ(x) = ∏ᵢ≠ⱼ(x - λᵢ) is the minimal polynomial with (x - λⱼ) factored out.
+    
+    This works because:
+    - pⱼ(N)² = pⱼ(N) pⱼ(λⱼ) (from p_min(N) = 0)
+    - Therefore Πⱼ² = Πⱼ (idempotence)
+    - And N Πⱼ = λⱼ Πⱼ (eigenspace property)
+    
+    Args:
+        operator: YawOperator to construct projector for
+        eigenvalue: Eigenvalue to project onto
+        state: Optional state for GNS construction (default: auto-detect)
+        tolerance: Threshold for matching eigenvalues (default: 1e-10)
+        
+    Returns:
+        YawOperator representing the projector
+        
+    Example:
+        >>> alg = qubit()
+        >>> X, Z = alg.X, alg.Z
+        >>> P_plus = proj_general(X, 1.0)   # Project onto +1 eigenspace of X
+        >>> P_minus = proj_general(X, -1.0) # Project onto -1 eigenspace of X
+        >>> ~(P_plus + P_minus)  # Should give I
+        >>> ~(P_plus * P_minus)  # Should give 0
+    
+    Notes:
+        This is the algebraic/symbolic version. For numerical projectors,
+        use proj() which returns a Projector object with built-in duality.
+    """
+    from sympy import symbols, expand, Poly
+    
+    # Get the minimal polynomial and eigenvalues
+    poly, distinct_eigenvalues = minimal_poly(operator, state, tolerance)
+    
+    # Find which eigenvalue matches the target
+    target_index = None
+    for i, ev in enumerate(distinct_eigenvalues):
+        # Check if eigenvalues match within tolerance
+        if isinstance(eigenvalue, complex) or isinstance(ev, complex):
+            diff = abs(complex(eigenvalue) - complex(ev))
+        else:
+            diff = abs(eigenvalue - ev)
+        
+        if diff < tolerance:
+            target_index = i
+            break
+    
+    if target_index is None:
+        raise ValueError(
+            f"Eigenvalue {eigenvalue} not found in spectrum {distinct_eigenvalues}. "
+            f"Available eigenvalues: {distinct_eigenvalues}"
+        )
+    
+    lambda_j = distinct_eigenvalues[target_index]
+    
+    # Construct pⱼ(x) = ∏ᵢ≠ⱼ(x - λᵢ)
+    # This is the minimal polynomial with (x - λⱼ) factored out
+    x = symbols('x')
+    p_j_expr = 1
+    for i, lambda_i in enumerate(distinct_eigenvalues):
+        if i != target_index:
+            p_j_expr *= (x - lambda_i)
+    
+    p_j_expr = expand(p_j_expr)
+    
+    # Evaluate pⱼ(λⱼ) (scalar)
+    p_j_at_lambda = complex(p_j_expr.subs(x, lambda_j))
+    
+    if abs(p_j_at_lambda) < tolerance:
+        raise ValueError(
+            f"Denominator pⱼ(λⱼ) is zero - eigenvalue may have multiplicity > 1"
+        )
+    
+    # Construct pⱼ(N) (operator)
+    # Extract coefficients from polynomial
+    p_j_poly = Poly(p_j_expr, x)
+    coeffs = p_j_poly.all_coeffs()  # Highest degree first
+    
+    # Evaluate polynomial at operator N
+    # pⱼ(N) = c₀N^d + c₁N^(d-1) + ... + c_d I
+    N = operator
+    I = operator.algebra.I if hasattr(operator, 'algebra') else None
+    
+    if I is None:
+        raise ValueError("Operator must have an associated algebra with identity I")
+    
+    # Horner's method: pⱼ(N) = (...((c₀N + c₁)N + c₂)N + ... + c_d)
+    p_j_N = I * coeffs[0]  # Start with c₀ * I
+    for coeff in coeffs[1:]:
+        p_j_N = p_j_N * N + I * coeff
+    
+    # Form projector: Πⱼ = pⱼ(N) / pⱼ(λⱼ)
+    projector = p_j_N / p_j_at_lambda
+    
+    # Normalize (this should already be normalized due to the construction)
+    return projector.normalize()
+
 
 def proj(operator, k):
     """Create projector onto k-th eigenspace.
