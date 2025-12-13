@@ -28,7 +28,7 @@ __all__ = [
     'OpBranches', 'opBranches', 'StBranches', 'stBranches',
     'compose_st_branches', 'compose_op_branches',
     'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
-    'QFT', 'qft', 'proj', 'proj_general', 'ctrl', 'ctrl_single',
+    'QFT', 'qft', 'proj', 'proj_general', 'ctrl', 'ctrl_spectral', 'ctrl_single',
     'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
     'comm', 'acomm',
     'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
@@ -878,10 +878,29 @@ class YawOperator:
         return self.normalize()
         
     def __mul__(self, other):
-        """Non-commutative multiplication."""
+        """Non-commutative multiplication.
+        
+        Supports:
+        - YawOperator * YawOperator
+        - YawOperator * TensorSum (distributivity)
+        - YawOperator * TensorProduct
+        - YawOperator * scalar
+        """
         if isinstance(other, YawOperator):
             return YawOperator(self._expr * other._expr, self.algebra)
-        return YawOperator(self._expr * other, self.algebra)
+        elif isinstance(other, TensorSum):
+            # Distribute: A * (B + C) = A*B + A*C
+            return TensorSum([self * term for term in other.terms])
+        elif isinstance(other, TensorProduct):
+            # Promote self to tensor product and multiply element-wise
+            # A * (B⊗C) treated as (A⊗I⊗...) * (B⊗C)
+            # For now, just multiply first factor
+            new_factors = other.factors.copy()
+            new_factors[0] = self * new_factors[0]
+            return TensorProduct(new_factors)
+        else:
+            # Scalar or SymPy expression
+            return YawOperator(self._expr * other, self.algebra)
 
     def __matmul__(self, other):
         """Tensor product using @ operator: A @ B = A ⊗ B
@@ -1409,25 +1428,36 @@ class TensorSum:
         raise NotImplementedError("Cannot conjugate with TensorSum yet")
 
     def __mul__(self, other):
-        """Scalar multiplication: c * (A + B) = cA + cB"""
+        """Multiplication: (A + B) * C = A*C + B*C (distributivity)"""
         if isinstance(other, (int, float, complex)):
-            return TensorSum([term * other for term in self.terms])
+            # Scalar multiplication
+            return TensorSum([term * other for term in self.terms], _skip_normalize=True)
         
         if hasattr(other, 'is_number') and other.is_number:
+            # SymPy scalar multiplication
+            return TensorSum([term * other for term in self.terms], _skip_normalize=True)
+        
+        if isinstance(other, (TensorProduct, YawOperator, TensorSum)):
+            # Distribute multiplication over sum: (A + B) * C = A*C + B*C
             return TensorSum([term * other for term in self.terms])
         
-        # Element-wise multiplication not yet supported for operators
         raise TypeError(f"Cannot multiply TensorSum with {type(other)}")
     
     def __rmul__(self, other):
-        """Right multiplication: c * (A + B)"""
+        """Right multiplication: C * (A + B) = C*A + C*B (distributivity)"""
         if isinstance(other, (int, float, complex)):
-            return TensorSum([other * term for term in self.terms])
+            # Scalar multiplication
+            return TensorSum([other * term for term in self.terms], _skip_normalize=True)
         
         if hasattr(other, 'is_number') and other.is_number:
+            # SymPy scalar multiplication
+            return TensorSum([other * term for term in self.terms], _skip_normalize=True)
+        
+        if isinstance(other, (TensorProduct, YawOperator, TensorSum)):
+            # Distribute multiplication over sum: C * (A + B) = C*A + C*B
             return TensorSum([other * term for term in self.terms])
         
-        return self.__mul__(other)
+        raise TypeError(f"Cannot multiply {type(other)} with TensorSum")
     
     def __sub__(self, other):
         """Subtraction: (A + B) - C"""
@@ -2017,6 +2047,8 @@ class TensorProduct:
         
         For scalars: c * (A ⊗ B) = (cA) ⊗ B
         For tensor products: (A⊗B) * (C⊗D) = (A*C) ⊗ (B*D)
+        For tensor sums: (A⊗B) * (C + D) = (A⊗B)*C + (A⊗B)*D (distributivity)
+        For single operators: Promote to tensor product if needed
         """
         # Scalar multiplication
         if isinstance(other, (int, float, complex)):
@@ -2030,6 +2062,11 @@ class TensorProduct:
             new_factors[0] = new_factors[0] * other
             return TensorProduct(new_factors)
         
+        # TensorSum: distribute multiplication
+        elif isinstance(other, TensorSum):
+            # (A⊗B) * (C + D) = (A⊗B)*C + (A⊗B)*D
+            return TensorSum([self * term for term in other.terms])
+        
         # Tensor product multiplication (element-wise)
         elif isinstance(other, TensorProduct):
             if len(self.factors) != len(other.factors):
@@ -2038,7 +2075,7 @@ class TensorProduct:
                     f"{len(self.factors)} vs {len(other.factors)}"
                 )
             
-            # Element-wise multiplication: (AâŠ—B) * (CâŠ—D) = (A*C) âŠ— (B*D)
+            # Element-wise multiplication: (A⊗B) * (C⊗D) = (A*C) ⊗ (B*D)
             new_factors = []
             for f1, f2 in zip(self.factors, other.factors):
                 product = f1 * f2
@@ -2048,6 +2085,18 @@ class TensorProduct:
                 new_factors.append(product)
             
             return TensorProduct(new_factors)
+        
+        # Single YawOperator: treat as element-wise multiplication on first factor
+        elif isinstance(other, YawOperator):
+            if len(self.factors) == 1:
+                # Single factor case
+                return TensorProduct([self.factors[0] * other])
+            else:
+                # Multi-factor: multiply first factor only
+                new_factors = self.factors.copy()
+                new_factors[0] = new_factors[0] * other
+                return TensorProduct(new_factors)
+        
         else:
             raise TypeError(f"Cannot multiply TensorProduct with {type(other)}")
     
@@ -4373,6 +4422,78 @@ class Projector(YawOperator):
 # ============================================================================
 # CONTROLLED OPERATIONS
 # ============================================================================
+
+def ctrl_spectral(control_op, controlled_ops, state=None, tolerance=1e-10):
+    """Create controlled operation using spectral decomposition.
+    
+    Given control operator N = ∑ᵢλᵢΠᵢ and operators [U₀, U₁, ..., Uₐ₋₁],
+    constructs the controlled operation:
+    
+        CU = ∑ᵢ Πᵢ ⊗ Uᵢ
+    
+    This applies Uᵢ when the control is in the i-th eigenspace.
+    
+    This is more general than ctrl() as it works for ANY operator with
+    a discrete spectrum, not just those with pow(d) relations.
+    
+    Args:
+        control_op: Control operator (any operator with discrete spectrum)
+        controlled_ops: List of operators to apply conditionally.
+                       Length must match number of distinct eigenvalues.
+        state: Optional state for GNS construction (default: auto-detect)
+        tolerance: Eigenvalue matching tolerance (default: 1e-10)
+        
+    Returns:
+        Controlled operation as sum of tensor products
+        
+    Example:
+        >>> # Standard CNOT using spectral decomposition
+        >>> CNOT = ctrl_spectral(Z, [I, X])
+        
+        >>> # Control with arbitrary Hermitian operator
+        >>> H = (X + Z) / sqrt(2)
+        >>> eigenvalues = spec(H)  # [1, -1]
+        >>> # Apply X when H has eigenvalue +1, Y when H has eigenvalue -1
+        >>> custom_ctrl = ctrl_spectral(H, [X, Y])
+        
+        >>> # For operators with non-standard spectra
+        >>> A = X + 0.5*Z  # eigenvalues: [±√1.25]
+        >>> ctrl_A = ctrl_spectral(A, [U0, U1])
+    
+    Notes:
+        - Automatically uses proj_general() to construct projectors
+        - Works for any operator, not just pow(d)
+        - Eigenvalues are ordered by spec() (descending real part)
+    """
+    # Get spectrum to determine number of eigenspaces
+    eigenvalues = spec(control_op, state, tolerance)
+    
+    # Check dimension match
+    num_eigenspaces = len(eigenvalues)
+    if len(controlled_ops) != num_eigenspaces:
+        raise ValueError(
+            f"Expected {num_eigenspaces} controlled operators for control "
+            f"operator with {num_eigenspaces} distinct eigenvalues, "
+            f"got {len(controlled_ops)}. Eigenvalues: {eigenvalues}"
+        )
+    
+    # Build sum: ∑ᵢ Πᵢ ⊗ Uᵢ
+    terms = []
+    
+    for i, eigenvalue in enumerate(eigenvalues):
+        # Construct projector onto i-th eigenspace
+        projector = proj_general(control_op, eigenvalue, state, tolerance)
+        
+        # Create tensor product: Πᵢ ⊗ Uᵢ
+        term = projector @ controlled_ops[i]
+        terms.append(term)
+    
+    # Return sum (TensorSum auto-normalizes)
+    if len(terms) == 1:
+        return terms[0]
+    else:
+        return TensorSum(terms)
+
 
 def ctrl(control_op, controlled_ops):
     """Create controlled operation using projector decomposition.
