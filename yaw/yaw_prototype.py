@@ -18,7 +18,7 @@ import re
 import random
 import numpy as np
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = [
     'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit',
     'State', 'EigenState', 'TensorState', 'ConjugatedState', 
@@ -1833,6 +1833,61 @@ class TensorProduct:
         else:
             raise TypeError(f"Cannot divide TensorProduct by {type(other)}")
     
+    def adjoint(self):
+        """Hermitian conjugate of tensor product: (A⊗B)† = A†⊗B†
+        
+        Distributes adjoint over each factor.
+        
+        Example:
+            >>> (X@Y).adjoint()  # Returns X†⊗Y†
+            >>> (H@H).H  # Same as (H@H).adjoint()
+        """
+        adjoint_factors = []
+        for factor in self.factors:
+            if hasattr(factor, 'adjoint'):
+                adjoint_factors.append(factor.adjoint())
+            else:
+                # If factor doesn't have adjoint, keep it as is
+                adjoint_factors.append(factor)
+        
+        return TensorProduct(adjoint_factors)
+    
+    @property
+    def H(self):
+        """Hermitian conjugate shortcut: (A⊗B).H
+        
+        Example:
+            >>> (X@Y).H  # Returns X†⊗Y†
+        """
+        return self.adjoint()
+    
+    @property
+    def dag(self):
+        """Dagger shortcut: (A⊗B).dag
+        
+        Example:
+            >>> (X@Y).dag  # Returns X†⊗Y†
+        """
+        return self.adjoint()
+    
+    @property
+    def d(self):
+        """Dagger shortcut: (A⊗B).d (most concise)
+        
+        Example:
+            >>> (X@Y).d  # Returns X†⊗Y†
+        """
+        return self.adjoint()
+    
+    @property
+    def T(self):
+        """Transpose shortcut: (A⊗B).T
+        
+        Example:
+            >>> (X@Y).T  # Returns X†⊗Y†
+        """
+        return self.adjoint()
+    
     def normalize(self, verbose=False):
         """Normalize each factor separately."""
         normalized_factors = []
@@ -1842,6 +1897,89 @@ class TensorProduct:
             else:
                 normalized_factors.append(factor)
         return TensorProduct(normalized_factors)
+    
+    def __rshift__(self, other):
+        """Operator conjugation for tensor products.
+        
+        Implements: (U⊗V) >> (A⊗B) = (U†AU)⊗(V†BV)
+        
+        This distributes conjugation across factors:
+        - Each U_i conjugates the corresponding A_i
+        - Preserves tensor product structure
+        
+        Args:
+            other: Operator to conjugate (YawOperator, TensorProduct, or TensorSum)
+            
+        Returns:
+            Conjugated operator
+            
+        Example:
+            >>> (H@H) >> (X@X)  # Returns Z@Z
+            >>> (H@I) >> (X@Y)  # Returns Z@Y
+        
+        Note:
+            This only works when self and other have compatible tensor structure.
+            For non-tensor operators, falls back to standard conjugation.
+        """
+        # Case 1: Conjugating a TensorProduct
+        if isinstance(other, TensorProduct):
+            if len(self.factors) != len(other.factors):
+                raise ValueError(
+                    f"Cannot conjugate: tensor products have different lengths "
+                    f"({len(self.factors)} vs {len(other.factors)})"
+                )
+            
+            # Apply conjugation factor-by-factor: (U_i >> A_i)
+            conjugated_factors = []
+            for u_factor, a_factor in zip(self.factors, other.factors):
+                # Each factor conjugates: u_factor >> a_factor = u_factor† * a_factor * u_factor
+                if hasattr(u_factor, 'conj_op'):
+                    conjugated = u_factor.conj_op(a_factor)
+                elif hasattr(u_factor, '__rshift__'):
+                    conjugated = u_factor >> a_factor
+                else:
+                    # Manual conjugation: U† A U
+                    u_adj = u_factor.adjoint() if hasattr(u_factor, 'adjoint') else u_factor
+                    conjugated = u_adj * a_factor * u_factor
+                
+                conjugated_factors.append(conjugated)
+            
+            return TensorProduct(conjugated_factors)
+        
+        # Case 2: Conjugating a YawOperator
+        elif isinstance(other, YawOperator):
+            # For single operators, we need to interpret this as acting on first factor
+            # This is ambiguous - for now, raise error
+            raise ValueError(
+                "Cannot conjugate single operator with tensor product. "
+                "Convert to tensor product first (e.g., A@I)"
+            )
+        
+        # Case 3: Conjugating a TensorSum
+        elif isinstance(other, TensorSum):
+            # Distribute conjugation over sum: U >> (A + B) = (U >> A) + (U >> B)
+            conjugated_terms = []
+            for term in other.terms:
+                conjugated_terms.append(self >> term)
+            
+            return TensorSum(conjugated_terms)
+        
+        else:
+            raise TypeError(f"Cannot conjugate TensorProduct with {type(other)}")
+    
+    def conj_op(self, other):
+        """Operator conjugation: self >> other
+        
+        This is the method version of __rshift__.
+        Implements (U⊗V) >> (A⊗B) = (U†AU)⊗(V†BV)
+        
+        Args:
+            other: Operator to conjugate
+            
+        Returns:
+            Conjugated operator
+        """
+        return self >> other
 
     def __mul__(self, other):
         """Multiplication of tensor products or scalars.
