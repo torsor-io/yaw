@@ -1425,9 +1425,32 @@ class TensorSum:
             return self.__add__(other)
     
     def __rshift__(self, operator):
-        """Conjugate: (A + B) >> C"""
-        # For now, not supported
-        raise NotImplementedError("Cannot conjugate with TensorSum yet")
+        """Conjugate: (A + B) >> C = (A + B)† C (A + B)
+        
+        This distributes as:
+            (A† + B†) C (A + B) = A†CA + A†CB + B†CA + B†CB
+        
+        We use the distributivity of multiplication that's already implemented.
+        """
+        # Compute adjoint: (A + B)† = A† + B†
+        adjoint_terms = []
+        for term in self.terms:
+            if hasattr(term, 'adjoint'):
+                adjoint_terms.append(term.adjoint())
+            else:
+                # For terms without adjoint, assume self-adjoint
+                adjoint_terms.append(term)
+        
+        adjoint_sum = TensorSum(adjoint_terms, _skip_normalize=True)
+        
+        # Conjugation: U† C U
+        # Left multiply: U† * C
+        left_result = adjoint_sum * operator
+        
+        # Right multiply: (U† * C) * U
+        final_result = left_result * self
+        
+        return final_result
 
     def __mul__(self, other):
         """Multiplication: (A + B) * C = A*C + B*C (distributivity)"""
