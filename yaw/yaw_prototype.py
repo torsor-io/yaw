@@ -2337,6 +2337,55 @@ class Algebra:
         
         return expr
     
+    def _simplify_projector_conjugates(self, expr):
+        """Simplify conjugate(proj(...)) → proj(...) since projectors are self-adjoint.
+        
+        Also simplifies proj(...)^n → proj(...) for n ≥ 1 (idempotence).
+        """
+        from sympy import conjugate, Pow
+        
+        def simplify_term(term):
+            # Handle conjugate(proj(...))
+            if isinstance(term, conjugate):
+                arg = term.args[0]
+                # Check if argument is a proj(...) symbol
+                if hasattr(arg, 'name') and str(arg).startswith('proj('):
+                    return arg  # Remove conjugate
+                # Recursively simplify
+                simplified_arg = simplify_term(arg)
+                if simplified_arg == arg:
+                    return term
+                else:
+                    return conjugate(simplified_arg)
+            
+            # Handle proj(...)^n for n ≥ 1 (idempotence)
+            elif isinstance(term, Pow):
+                base = term.base
+                exp = term.exp
+                if hasattr(base, 'name') and str(base).startswith('proj('):
+                    if isinstance(exp, int) and exp >= 1:
+                        return base  # proj^n = proj for n ≥ 1
+                    elif exp == 0:
+                        return self.I._expr  # proj^0 = I
+                # Recursively simplify base
+                simplified_base = simplify_term(base)
+                if simplified_base != base:
+                    return simplified_base ** exp
+                return term
+            
+            # Handle products and sums recursively
+            elif isinstance(term, Mul):
+                new_args = [simplify_term(arg) for arg in term.args]
+                return Mul(*new_args)
+            
+            elif isinstance(term, Add):
+                new_args = [simplify_term(arg) for arg in term.args]
+                return Add(*new_args)
+            
+            return term
+        
+        return simplify_term(expr)
+    
     def _reduce_powers(self, expr):
         """Reduce higher powers according to pow(n) relations.
 
@@ -2464,6 +2513,13 @@ class Algebra:
             if new_expr != expr:
                 if verbose:
                     print(f"  → Identity simplified: {expr} ↦ {new_expr}")
+                expr = new_expr
+            
+            # Simplify conjugate(proj(...)) → proj(...) since projectors are self-adjoint
+            new_expr = self._simplify_projector_conjugates(expr)
+            if new_expr != expr:
+                if verbose:
+                    print(f"  → Projector conjugates simplified: {expr} ↦ {new_expr}")
                 expr = new_expr
 
             expr = expand(expr)
@@ -2868,6 +2924,11 @@ class EigenState(State):
         """
         if _depth > 10:
             return _clean_number(0.0)
+        
+        # Handle TensorSum: ⟨ψ|(A + B)|ψ⟩ = ⟨ψ|A|ψ⟩ + ⟨ψ|B|ψ⟩
+        if isinstance(op, TensorSum):
+            result = sum(self.expect(term, _depth=_depth+1) for term in op.terms)
+            return _clean_number(result)
 
         if isinstance(op, Projector):
             if self.observable == op.base_operator:
@@ -2968,6 +3029,11 @@ class TensorState(State):
         """Compute expectation value on tensor product state."""
         if _depth > 10:
             return 0.0
+        
+        # Handle tensor sum: ⟨ψ|(A + B)|ψ⟩ = ⟨ψ|A|ψ⟩ + ⟨ψ|B|ψ⟩
+        if isinstance(operator, TensorSum):
+            result = sum(self.expect(term, _depth=_depth+1) for term in operator.terms)
+            return _clean_number(result)
         
         # Handle tensor product operators
         if isinstance(operator, TensorProduct):
@@ -4509,6 +4575,53 @@ class Projector(YawOperator):
     def to_algebraic(self):
         """Deprecated: use expand() instead."""
         return self.expand()
+    
+    def adjoint(self):
+        """Projectors are self-adjoint: P† = P"""
+        return self
+    
+    def __mul__(self, other):
+        """Projector multiplication.
+        
+        Properties:
+        - P² = P (idempotence)
+        - PₖPⱼ = 0 if k ≠ j (orthogonality)
+        - PₖPⱼ = Pₖ if k = j (idempotence again)
+        """
+        if isinstance(other, Projector):
+            # Check if same base operator
+            if self.base_operator == other.base_operator:
+                if self.eigenspace_index == other.eigenspace_index:
+                    # Same projector: P * P = P (idempotence)
+                    return self
+                else:
+                    # Different projectors: Pₖ * Pⱼ = 0 (orthogonality)
+                    # Return zero in the algebra
+                    if self._algebra and hasattr(self._algebra, 'I'):
+                        return self._algebra.I * 0
+                    else:
+                        return YawOperator(0, self._algebra)
+            else:
+                # Different operators - fall back to default multiplication
+                # Expand both to algebraic form and multiply
+                return self.expand() * other.expand()
+        else:
+            # Fall back to default YawOperator multiplication
+            return super().__mul__(other)
+    
+    def __pow__(self, exponent):
+        """Projector powers: P^n = P for n ≥ 1 (idempotence)"""
+        if isinstance(exponent, int) and exponent >= 1:
+            return self
+        elif exponent == 0:
+            # P^0 = I
+            if self._algebra and hasattr(self._algebra, 'I'):
+                return self._algebra.I
+            else:
+                return YawOperator(1, self._algebra)
+        else:
+            # Fractional or negative powers - expand and use default
+            return self.expand() ** exponent
     
     def __str__(self):
         return f"proj({self.base_operator}, {self.eigenspace_index})"
