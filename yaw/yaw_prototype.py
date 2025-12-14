@@ -907,27 +907,78 @@ class YawOperator:
 
         Distributes over sums on both sides.
         """
-        from sympy import Add
+        from sympy import Add, Mul
 
         # *** FIRST: Check if SELF (left operand) is a sum ***
-        if isinstance(self._expr, Add):
-            # Distribute: (A + B) @ C = A @ C + B @ C
+        # Handle case where expr might be coeff * (A + B)
+        expr_to_check = self._expr
+        coeff = 1
+        
+        if isinstance(expr_to_check, Mul):
+            # Extract numerical coefficient
+            coeff_factors = []
+            non_coeff_factors = []
+            for arg in expr_to_check.args:
+                if arg.is_number:
+                    coeff_factors.append(arg)
+                else:
+                    non_coeff_factors.append(arg)
+            
+            if coeff_factors:
+                from sympy import Mul as SympyMul
+                coeff = SympyMul(*coeff_factors) if len(coeff_factors) > 1 else coeff_factors[0]
+                if len(non_coeff_factors) == 1:
+                    expr_to_check = non_coeff_factors[0]
+                elif len(non_coeff_factors) > 1:
+                    expr_to_check = SympyMul(*non_coeff_factors)
+                # else: pure coefficient, handled below
+        
+        if isinstance(expr_to_check, Add):
+            # Distribute: coeff * (A + B) @ C = coeff * (A @ C + B @ C)
             terms = []
-            for term_expr in self._expr.args:
+            for term_expr in expr_to_check.args:
                 term_op = YawOperator(term_expr, self.algebra)
                 tensor_product = term_op @ other
                 terms.append(tensor_product)
-            return TensorSum(terms)
+            result = TensorSum(terms)
+            if coeff != 1:
+                result = coeff * result
+            return result
 
         # *** SECOND: Check if OTHER (right operand) is a sum ***
-        if isinstance(other, YawOperator) and isinstance(other._expr, Add):
-            # Distribute: A @ (B + C) = A @ B + A @ C
-            terms = []
-            for term_expr in other._expr.args:
-                term_op = YawOperator(term_expr, other.algebra)
-                tensor_product = self @ term_op
-                terms.append(tensor_product)
-            return TensorSum(terms)
+        if isinstance(other, YawOperator):
+            other_expr = other._expr
+            other_coeff = 1
+            
+            if isinstance(other_expr, Mul):
+                # Extract numerical coefficient from other
+                coeff_factors = []
+                non_coeff_factors = []
+                for arg in other_expr.args:
+                    if arg.is_number:
+                        coeff_factors.append(arg)
+                    else:
+                        non_coeff_factors.append(arg)
+                
+                if coeff_factors:
+                    from sympy import Mul as SympyMul
+                    other_coeff = SympyMul(*coeff_factors) if len(coeff_factors) > 1 else coeff_factors[0]
+                    if len(non_coeff_factors) == 1:
+                        other_expr = non_coeff_factors[0]
+                    elif len(non_coeff_factors) > 1:
+                        other_expr = SympyMul(*non_coeff_factors)
+            
+            if isinstance(other_expr, Add):
+                # Distribute: A @ (coeff * (B + C)) = coeff * (A @ B + A @ C)
+                terms = []
+                for term_expr in other_expr.args:
+                    term_op = YawOperator(term_expr, other.algebra)
+                    tensor_product = self @ term_op
+                    terms.append(tensor_product)
+                result = TensorSum(terms)
+                if other_coeff != 1:
+                    result = other_coeff * result
+                return result
 
         # *** THIRD: Handle simple cases ***
         if isinstance(other, YawOperator):
@@ -948,20 +999,44 @@ class YawOperator:
 
         Distributes: (A + B) @ C = A @ C + B @ C
         """
-        from sympy import Add
+        from sympy import Add, Mul
 
         if isinstance(other, YawOperator):
-            # Check if other is a sum
-            if isinstance(other._expr, Add):
+            # Check if other is a sum (possibly with coefficient)
+            other_expr = other._expr
+            other_coeff = 1
+            
+            if isinstance(other_expr, Mul):
+                # Extract numerical coefficient
+                coeff_factors = []
+                non_coeff_factors = []
+                for arg in other_expr.args:
+                    if arg.is_number:
+                        coeff_factors.append(arg)
+                    else:
+                        non_coeff_factors.append(arg)
+                
+                if coeff_factors:
+                    from sympy import Mul as SympyMul
+                    other_coeff = SympyMul(*coeff_factors) if len(coeff_factors) > 1 else coeff_factors[0]
+                    if len(non_coeff_factors) == 1:
+                        other_expr = non_coeff_factors[0]
+                    elif len(non_coeff_factors) > 1:
+                        other_expr = SympyMul(*non_coeff_factors)
+            
+            if isinstance(other_expr, Add):
                 # Distribute
                 terms = []
-                for term in other._expr.args:
+                for term in other_expr.args:
                     term_op = YawOperator(term, other.algebra)
                     tensor_product = TensorProduct([term_op, self])
                     terms.append(tensor_product)
 
-                # Return TensorSum
-                return TensorSum(terms)
+                # Return TensorSum with coefficient if needed
+                result = TensorSum(terms)
+                if other_coeff != 1:
+                    result = other_coeff * result
+                return result
             else:
                 return TensorProduct([other, self])
         else:
@@ -4312,6 +4387,7 @@ class QFT:
             I ↦ I
             AB ↦ (W >> A)(W >> B)  (automorphism)
             A + B ↦ (W >> A) + (W >> B)  (linearity)
+            A + B â†¦ (W >> A) + (W >> B)  (linearity)
         """
         from sympy import symbols, Mul, Add, Pow
         
