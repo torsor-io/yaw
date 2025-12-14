@@ -2338,19 +2338,45 @@ class Algebra:
         return expr
     
     def _simplify_projector_conjugates(self, expr):
-        """Simplify conjugate(proj(...)) → proj(...) since projectors are self-adjoint.
+        """Simplify projector expressions using projector algebra.
         
-        Also simplifies proj(...)^n → proj(...) for n ≥ 1 (idempotence).
+        Rules:
+        - conjugate(proj(...)) → proj(...) (self-adjoint)
+        - proj(A, k)^n → proj(A, k) for n ≥ 1 (idempotence)
+        - proj(A, k) * proj(A, j) → 0 if k ≠ j (orthogonality)
+        - proj(A, k) * proj(A, k) → proj(A, k) (idempotence)
         """
-        from sympy import conjugate, Pow
+        from sympy import conjugate, Pow, Mul, Symbol
+        
+        def is_projector(expr):
+            """Check if expression is a projector symbol."""
+            return hasattr(expr, 'name') and str(expr).startswith('proj(')
+        
+        def parse_projector(proj_expr):
+            """Parse proj(op, k) to extract operator and index.
+            Returns (operator_str, index) or None if not a projector.
+            """
+            if not is_projector(proj_expr):
+                return None
+            
+            proj_str = str(proj_expr)
+            # Format is "proj(op, k)" - extract op and k
+            try:
+                # Remove "proj(" prefix and ")" suffix
+                inner = proj_str[5:-1]  # "op, k"
+                parts = inner.split(', ')
+                if len(parts) == 2:
+                    return (parts[0], int(parts[1]))
+            except:
+                pass
+            return None
         
         def simplify_term(term):
             # Handle conjugate(proj(...))
             if isinstance(term, conjugate):
                 arg = term.args[0]
-                # Check if argument is a proj(...) symbol
-                if hasattr(arg, 'name') and str(arg).startswith('proj('):
-                    return arg  # Remove conjugate
+                if is_projector(arg):
+                    return arg  # Remove conjugate (self-adjoint)
                 # Recursively simplify
                 simplified_arg = simplify_term(arg)
                 if simplified_arg == arg:
@@ -2362,22 +2388,112 @@ class Algebra:
             elif isinstance(term, Pow):
                 base = term.base
                 exp = term.exp
-                if hasattr(base, 'name') and str(base).startswith('proj('):
-                    if isinstance(exp, int) and exp >= 1:
-                        return base  # proj^n = proj for n ≥ 1
-                    elif exp == 0:
-                        return self.I._expr  # proj^0 = I
+                
+                if is_projector(base):
+                    # Check if exponent is a positive integer (works with both Python int and SymPy Integer)
+                    try:
+                        exp_val = int(exp)
+                        if exp_val >= 1:
+                            return base  # proj^n = proj for n ≥ 1
+                        elif exp_val == 0:
+                            return self.I._expr  # proj^0 = I
+                    except (TypeError, ValueError):
+                        pass  # Not an integer exponent
+                
                 # Recursively simplify base
                 simplified_base = simplify_term(base)
                 if simplified_base != base:
-                    return simplified_base ** exp
+                    return Pow(simplified_base, exp)
                 return term
             
-            # Handle products and sums recursively
+            # Handle products - this is the critical case!
             elif isinstance(term, Mul):
-                new_args = [simplify_term(arg) for arg in term.args]
-                return Mul(*new_args)
+                args = list(term.args)
+                
+                # Separate coefficients from projectors/operators
+                coeff = 1
+                proj_factors = []
+                other_factors = []
+                
+                for arg in args:
+                    if isinstance(arg, (int, float, complex)) or (hasattr(arg, 'is_number') and arg.is_number):
+                        coeff *= arg
+                    elif is_projector(arg):
+                        proj_factors.append(arg)
+                    elif isinstance(arg, Pow) and is_projector(arg.base):
+                        # Handle proj^n in products
+                        try:
+                            exp_val = int(arg.exp)
+                            if exp_val >= 1:
+                                proj_factors.append(arg.base)  # Reduce proj^n to proj
+                            elif exp_val == 0:
+                                coeff *= 1  # proj^0 = I
+                            else:
+                                proj_factors.append(arg)
+                        except (TypeError, ValueError):
+                            proj_factors.append(arg)  # Non-integer exponent
+                    else:
+                        other_factors.append(arg)
+                
+                # Simplify consecutive projectors: proj(A,k) * proj(A,j)
+                simplified_projs = []
+                i = 0
+                while i < len(proj_factors):
+                    current_proj = proj_factors[i]
+                    current_info = parse_projector(current_proj)
+                    
+                    if current_info is None:
+                        simplified_projs.append(current_proj)
+                        i += 1
+                        continue
+                    
+                    current_op, current_idx = current_info
+                    
+                    # Look ahead for consecutive projectors of the same operator
+                    j = i + 1
+                    absorbed = False
+                    while j < len(proj_factors):
+                        next_proj = proj_factors[j]
+                        next_info = parse_projector(next_proj)
+                        
+                        if next_info is None:
+                            break
+                        
+                        next_op, next_idx = next_info
+                        
+                        # Check if they're projectors of the same operator
+                        if current_op == next_op:
+                            if current_idx == next_idx:
+                                # proj(A, k) * proj(A, k) = proj(A, k)
+                                # Keep current, skip next
+                                proj_factors.pop(j)
+                                absorbed = True
+                                # Don't increment j, check the new element at position j
+                            else:
+                                # proj(A, k) * proj(A, j) = 0 for k ≠ j
+                                return 0
+                        else:
+                            break
+                    
+                    if not absorbed:
+                        simplified_projs.append(current_proj)
+                    i += 1
+                
+                # Reconstruct
+                all_factors = []
+                if coeff != 1:
+                    all_factors.append(coeff)
+                all_factors.extend(simplified_projs)
+                all_factors.extend([simplify_term(f) for f in other_factors])
+                
+                if not all_factors:
+                    return 1
+                elif len(all_factors) == 1:
+                    return all_factors[0]
+                else:
+                    return Mul(*all_factors)
             
+            # Handle sums recursively
             elif isinstance(term, Add):
                 new_args = [simplify_term(arg) for arg in term.args]
                 return Add(*new_args)
