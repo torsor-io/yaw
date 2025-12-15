@@ -4363,8 +4363,8 @@ class CollapsedState(State):
         if self.probability < 1e-10:
             return 0.0  # Convention: zero-probability branch has zero expectation
         
-        # Transform operator: K† A K
-        transformed = self.kraus_op.conj_op(operator)
+        # Transform operator: K† A K using direct multiplication
+        transformed = self.kraus_op.adjoint() * operator * self.kraus_op
         
         # Normalize
         if hasattr(transformed, 'normalize'):
