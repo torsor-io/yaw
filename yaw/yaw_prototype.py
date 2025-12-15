@@ -1579,6 +1579,58 @@ class TensorSum:
         """Negation: -(A + B) = -A + -B"""
         return TensorSum([term * (-1) for term in self.terms])
 
+    def adjoint(self):
+        """Hermitian conjugate of sum: (A + B)† = A† + B†
+        
+        Distributes adjoint over each term in the sum.
+        
+        Example:
+            >>> (X@I + Z@I).adjoint()  # Returns X†@I† + Z†@I†
+            >>> (H@H + X@Z).d  # Same using shortcut
+        """
+        adjoint_terms = []
+        for term in self.terms:
+            if hasattr(term, 'adjoint'):
+                adj = term.adjoint()
+                # Normalize each term if possible
+                if hasattr(adj, 'normalize'):
+                    adj = adj.normalize()
+                adjoint_terms.append(adj)
+            else:
+                # If term doesn't have adjoint, keep it as is
+                adjoint_terms.append(term)
+        
+        return TensorSum(adjoint_terms)
+    
+    @property
+    def H(self):
+        """Hermitian conjugate shortcut: (A + B).H
+        
+        Example:
+            >>> (X@I + Z@I).H  # Returns X†@I† + Z†@I†
+        """
+        return self.adjoint()
+    
+    @property
+    def dag(self):
+        """Dagger shortcut: (A + B).dag
+        
+        Example:
+            >>> (X@I + Z@I).dag  # Returns X†@I† + Z†@I†
+        """
+        return self.adjoint()
+    
+    @property
+    def d(self):
+        """Dagger shortcut: (A + B).d (most concise)
+        
+        This is the recommended shortcut for adjoint/dagger operation.
+        
+        Example:
+            >>> (X@I + Z@I).d  # Returns X†@I† + Z†@I†
+        """
+        return self.adjoint()
+    
     def normalize(self, verbose=False):
         """Normalize and simplify the sum by combining like terms."""
         from collections import defaultdict
