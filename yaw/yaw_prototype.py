@@ -1832,6 +1832,24 @@ class TensorSum:
             # Pass _skip_normalize=True to prevent infinite recursion
             return TensorSum(combined, _skip_normalize=True)
 
+    def flatten(self):
+        """Flatten tensor structure by linearity: (A + B) @ C → A @ C + B @ C
+        
+        Applies flattening to each term and returns a new TensorSum.
+        
+        Example:
+            >>> sum_op = (X @ Y) + (Z @ I)
+            >>> flat = sum_op.flatten()  # Each term flattened independently
+        """
+        flattened_terms = []
+        for term in self.terms:
+            if hasattr(term, 'flatten'):
+                flattened_terms.append(term.flatten())
+            else:
+                flattened_terms.append(term)
+        
+        return TensorSum(flattened_terms, _skip_normalize=True)
+ 
     def __matmul__(self, other):
         """Tensor product: (A + B + ...) @ C
 
@@ -2192,6 +2210,29 @@ class TensorProduct:
             else:
                 normalized_factors.append(factor)
         return TensorProduct(normalized_factors)
+    
+    def flatten(self):
+        """Flatten nested tensor products: (A @ B) @ C → A @ B @ C
+        
+        Returns a new TensorProduct with all nested TensorProducts expanded
+        into a flat list of factors.
+        
+        Example:
+            >>> A = X @ Y
+            >>> B = Z @ I  
+            >>> nested = A @ B  # 2 factors: [A, B]
+            >>> flat = nested.flatten()  # 4 factors: [X, Y, Z, I]
+        """
+        flat_factors = []
+        for factor in self.factors:
+            if isinstance(factor, TensorProduct):
+                # Recursively flatten nested tensor products
+                nested_flat = factor.flatten()
+                flat_factors.extend(nested_flat.factors)
+            else:
+                flat_factors.append(factor)
+        
+        return TensorProduct(flat_factors)
     
     def __rshift__(self, other):
         """Operator conjugation for tensor products.
@@ -3362,6 +3403,10 @@ class EigenState(State):
     def __repr__(self):
         return f"char({obs_str}, {self.index})"
     
+    def flatten(self):
+        """EigenStates are already atomic - return self."""
+        return self
+    
 class TensorState(State):
     """Tensor product of states: |ψ⟩ ⊗ |φ⟩"""
     
@@ -3436,6 +3481,29 @@ class TensorState(State):
         """Display representation."""
         return f"TensorState({', '.join(str(s) for s in self.states)})"
     
+    def flatten(self):
+        """Flatten nested tensor structures: A @ (B @ C) → A @ B @ C
+        
+        Returns a new TensorState with all nested TensorStates expanded into
+        a flat list of component states.
+        
+        Example:
+            >>> state1 = char(Z, 0)
+            >>> state2 = char(Z, 0) @ char(Z, 1)
+            >>> nested = state1 @ state2  # 2 factors: [state1, state2]
+            >>> flat = nested.flatten()    # 3 factors: [char(Z,0), char(Z,0), char(Z,1)]
+        """
+        flat_states = []
+        for state in self.states:
+            if isinstance(state, TensorState):
+                # Recursively flatten nested tensor states
+                nested_flat = state.flatten()
+                flat_states.extend(nested_flat.states)
+            else:
+                flat_states.append(state)
+        
+        return TensorState(flat_states)
+    
 class LeftMultipliedState(State):
     """State with left multiplication: (A <<<) φ
     
@@ -3505,6 +3573,12 @@ class LeftMultipliedState(State):
     def __truediv__(self, scalar):
         """Division by scalar."""
         return ScaledState(1/scalar, self)
+    
+    def flatten(self):
+        """Flatten by recursively flattening the base state."""
+        if hasattr(self.state, 'flatten'):
+            return LeftMultipliedState(self.operator, self.state.flatten())
+        return self
 
 
 class RightMultipliedState(State):
@@ -3572,6 +3646,12 @@ class RightMultipliedState(State):
     def __truediv__(self, scalar):
         """Division by scalar."""
         return ScaledState(1/scalar, self)
+    
+    def flatten(self):
+        """Flatten by recursively flattening the base state."""
+        if hasattr(self.state, 'flatten'):
+            return RightMultipliedState(self.operator, self.state.flatten())
+        return self
 
 
 class ScaledState(State):
@@ -3614,6 +3694,12 @@ class ScaledState(State):
     
     def __truediv__(self, scalar):
         return ScaledState(self.scalar / scalar, self.state)
+    
+    def flatten(self):
+        """Flatten by recursively flattening the base state."""
+        if hasattr(self.state, 'flatten'):
+            return ScaledState(self.scalar, self.state.flatten())
+        return self
 
 
 class SumState(State):
@@ -3658,6 +3744,16 @@ class SumState(State):
     
     def __truediv__(self, scalar):
         return ScaledState(1/scalar, self)
+    
+    def flatten(self):
+        """Flatten by recursively flattening each component state."""
+        flattened_states = []
+        for state in self.states:
+            if hasattr(state, 'flatten'):
+                flattened_states.append(state.flatten())
+            else:
+                flattened_states.append(state)
+        return SumState(flattened_states)
     
 class ConjugatedState(State):
     """State transformed by unitary: U << |ψ⟩.
@@ -4149,6 +4245,12 @@ class TransformedState(State):
     def __ror__(self, operator):
         """Enable A | state syntax."""
         return self.expect(operator)
+    
+    def flatten(self):
+        """Flatten by recursively flattening the base state."""
+        if hasattr(self.state, 'flatten'):
+            return TransformedState(self.channel, self.state.flatten())
+        return self
 
 class ComposedStChannel(StChannel):
     """Composition of two state channels."""
@@ -5153,6 +5255,17 @@ class Projector(YawOperator):
     # Keep old name for compatibility
     def to_algebraic(self):
         """Deprecated: use expand() instead."""
+        return self.expand()
+    
+    @property
+    def e(self):
+        """Shorthand for .expand() - returns algebraic form.
+        
+        Usage: proj(Z, 0).e instead of proj(Z, 0).expand()
+        
+        Example:
+            >>> CNOT = proj(Z, 0).e @ I + proj(Z, 1).e @ X
+        """
         return self.expand()
     
     def adjoint(self):
