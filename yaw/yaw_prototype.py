@@ -1685,7 +1685,11 @@ class TensorSum:
                 canonical_factors = []
 
                 for factor in term.factors:
-                    if isinstance(factor, YawOperator):
+                    # *** CRITICAL FIX: Preserve Projector type ***
+                    if isinstance(factor, Projector):
+                        # Projectors are already canonical - don't extract coefficients
+                        canonical_factors.append(factor)
+                    elif isinstance(factor, YawOperator):
                         # Extract coefficient from this factor
                         expr = factor._expr
 
@@ -3264,6 +3268,31 @@ class EigenState(State):
                 else:
                     return _clean_number(0.0)
             # Different operator - fall through to general case
+        
+        # *** CRITICAL FIX: Detect YawOperator wrappers around projector symbols ***
+        # If op is a YawOperator with a projector symbol expression,
+        # handle it like a Projector object for eigenstate duality
+        if isinstance(op, YawOperator) and not isinstance(op, Projector):
+            expr_str = str(op._expr)
+            if expr_str.startswith('proj('):
+                # Parse the projector: proj(Observable, index)
+                try:
+                    import re
+                    match = re.match(r'proj\((.+),\s*(\d+)\)', expr_str)
+                    if match:
+                        obs_str = match.group(1)
+                        proj_index = int(match.group(2))
+                        
+                        # Check if this matches our observable
+                        if str(self.observable) == obs_str:
+                            # Duality: ⟨char(A,j) | proj(A,k) | char(A,j)⟩ = δ_{jk}
+                            if self.index == proj_index:
+                                return _clean_number(1.0)
+                            else:
+                                return _clean_number(0.0)
+                except:
+                    # If parsing fails, fall through to general case
+                    pass
         
         # Normalize operator first
         op_norm = self.algebra.normalize(op)
@@ -5142,17 +5171,28 @@ class Projector(YawOperator):
         
         Preserves Projector type when possible.
         """
+        # Handle plain Python scalars
+        if isinstance(other, (int, float, complex)):
+            # Scalar multiplication - fall back to YawOperator
+            from sympy import sympify
+            return YawOperator(sympify(other) * self._expr, self._algebra)
+        
         # If multiplying by identity, return self
         if hasattr(other, '_expr') and (str(other._expr) == 'I' or other._expr == 1):
             return self
         
-        # If multiplying by a scalar, return scaled projector
+        # If multiplying by a symbolic scalar, return scaled projector
         if hasattr(other, '_expr') and other._expr.is_number:
             # For now, fall back to YawOperator for scaled projectors
             return YawOperator(other._expr * self._expr, self._algebra)
         
         # Otherwise fall back to standard multiplication
-        return YawOperator(other._expr * self._expr, self._algebra)
+        if hasattr(other, '_expr'):
+            return YawOperator(other._expr * self._expr, self._algebra)
+        else:
+            # Unknown type - try converting to YawOperator
+            from sympy import sympify
+            return YawOperator(sympify(other) * self._expr, self._algebra)
     
     def __mul__(self, other):
         """Projector multiplication.
