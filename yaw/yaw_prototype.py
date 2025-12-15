@@ -5474,7 +5474,7 @@ def ctrl(control_op, controlled_ops):
     
     for k in range(d):
         # Get projector for k-th eigenspace
-        projector = proj(control_op, k)
+        projector = proj(control_op, k).e
         
         # *** USE @ OPERATOR instead of tensor() function ***
         # This handles TensorSum distribution automatically
