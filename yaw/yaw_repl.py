@@ -228,14 +228,15 @@ class YawREPL:
         return line
     
     def _preprocess_tensor_powers(self, line):
-        """Replace (@n) expr with expr ** n for tensor powers.
+        """Replace (@n) expr with explicit tensor product chain.
         
         Transforms:
-            (@3) char(Z, 0) → (char(Z, 0)) ** 3
-            init = (@5) X → init = (X) ** 5
+            (@3) X → X @ X @ X
+            (@5) char(Z, 0) → char(Z, 0) @ char(Z, 0) @ char(Z, 0) @ char(Z, 0) @ char(Z, 0)
+            init = (@3) X → init = X @ X @ X
             
-        This provides convenient shorthand for tensor powers:
-            char(Z, 0) ** 3  means  char(Z, 0) @ char(Z, 0) @ char(Z, 0)
+        This provides convenient shorthand for tensor powers.
+        Creates explicit @ chains for consistency across states and operators.
         """
         import re
         
@@ -243,7 +244,7 @@ class YawREPL:
         match = re.search(r'\(@(\d+)\)\s+(.+)', line)
         
         if match:
-            n = match.group(1)
+            n = int(match.group(1))
             rest = match.group(2).strip()
             
             # Check if there's an assignment before (@n)
@@ -252,10 +253,14 @@ class YawREPL:
                 # Handle: var = (@n) expr
                 lhs = assignment_match.group(1)
                 expr = assignment_match.group(2)
-                return f"{lhs} ({expr}) ** {n}"
+                # Build explicit chain: expr @ expr @ expr @ ...
+                tensor_chain = ' @ '.join([f'({expr})'] * n)
+                return f"{lhs} {tensor_chain}"
             else:
                 # Handle: (@n) expr (no assignment)
-                return f"({rest}) ** {n}"
+                # Build explicit chain: expr @ expr @ expr @ ...
+                tensor_chain = ' @ '.join([f'({rest})'] * n)
+                return tensor_chain
         
         return line
     
