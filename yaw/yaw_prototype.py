@@ -1306,80 +1306,39 @@ class YawOperator:
         return self.conj_op(other)
     
     def __lshift__(self, state):
-        """Apply operator to state (conjugation): A << psi
-
-        Special cases:
-        - Identity returns state unchanged
-        - Projectors use duality with eigenstates
-        - Anticommuting operators flip eigenstates
+        """Apply operator to state: U << φ
+        
+        Implements the transformation: (U << φ)(A) = φ(U† A U)
+        
+        This is computed algebraically as: U << φ = U† % (U // φ)
+        where % is left multiplication and // is right multiplication.
+        
+        Special case: Identity operator returns state unchanged.
+        
+        Args:
+            state: State functional to transform
+            
+        Returns:
+            Transformed state functional
+            
+        Example:
+            >>> H << psi_0  # Apply Hadamard to |0⟩
         """
-        # *** FIXED: Better identity check ***
+        # Check if this is identity
         if self.algebra:
-            # Check if this is identity by normalizing and checking string
             try:
                 normalized = self.normalize()
                 if str(normalized._expr) == 'I' or normalized._expr == 1:
                     return state
             except:
                 pass
-
-        # Also check raw expression
+        
         if str(self._expr) == 'I':
             return state
-
-        # Handle eigenstates specially
-        if isinstance(state, EigenState):
-            # Case 1: Eigenstate of the same operator
-            if self == state.observable:
-                # A << char(A, k) = λ_k char(A, k)
-                # For now, just return the state (eigenvalue absorbed)
-                return state
-
-            # Case 2: Check if operators anticommute
-            # CRITICAL: Skip shortcuts for operators containing projectors
-            # Projectors don't follow simple commutation/anticommutation rules
-            # Example: proj(Z,0)*X anticommutes with Z, but proj(Z,0)*X|0⟩ = 0, not |1⟩
-            expr_str = str(self._expr)
-            if 'proj' in expr_str:
-                # Operator contains projectors - use general conjugation
-                return ConjugatedState(self, state)
-
-            # Case 2: Check if operators anticommute (ONLY for non-projector operators)
-            if self.algebra and state.observable.algebra:
-                try:
-                    # Try to compute anticommutator {A, B}
-                    anticomm = (self * state.observable + state.observable * self).normalize()
-
-                    # Check if anticommutator is zero (operators anticommute)
-                    anticomm_str = str(anticomm._expr)
-                    if anticomm_str == '0' or abs(complex(anticomm._expr)) < 1e-10:
-                        # Anticommuting operators flip eigenstates!
-                        # For d=2: A << char(B, k) = char(B, 1-k)
-                        d = self.algebra.power_mod
-                        if d == 2:
-                            flipped_index = 1 - state.index
-                            return EigenState(state.observable, flipped_index, state.algebra)
-                        else:
-                            # For d > 2, more complex
-                            return ConjugatedState(self, state)
-
-                    # Try to compute commutator [A, B]
-                    comm = (self * state.observable - state.observable * self).normalize()
-                    comm_str = str(comm._expr)
-
-                    # Check if commutator is zero (operators commute)
-                    if comm_str == '0' or abs(complex(comm._expr)) < 1e-10:
-                        # Commuting operators: state remains eigenstate
-                        return state
-                except:
-                    # If computation fails, fall back
-                    pass
-
-            # Default: create conjugated state
-            return ConjugatedState(self, state)
-
-        else:
-            return ConjugatedState(self, state)
+        
+        # Algebraic implementation: U << φ = U† % (U // φ)
+        # This computes: (U << φ)(A) = φ(U† A U)
+        return self.adjoint() % (self // state)
 
 # ============================================================================
 # COMMUTATORS AND ANTICOMMUTATORS
@@ -1474,72 +1433,20 @@ class TensorSum:
         return self.normalize()
         
     def __lshift__(self, state):
-        """Apply sum to state: (A + B) << psi
-
-        For controlled operations, filter terms by projector orthogonality.
-        Only terms where ALL projectors match the state contribute.
+        """Apply sum to state: (A + B) << φ
+        
+        Implements: ((A + B) << φ)(C) = φ((A + B)† C (A + B))
+        
+        This is computed algebraically as: (A + B) << φ = (A + B)† % ((A + B) // φ)
+        
+        Args:
+            state: State functional to transform
+            
+        Returns:
+            Transformed state functional
         """
-        results = []
-        errors = []
-
-        for term in self.terms:
-            try:
-                if isinstance(term, TensorProduct) and isinstance(state, TensorState):
-                    if len(term.factors) != len(state.states):
-                        continue
-
-                    # Check only projectors for orthogonality
-                    term_contributes = True
-                    for op, st in zip(term.factors, state.states):
-                        # Only check projectors - they have clear orthogonality
-                        if isinstance(op, Projector):
-                            exp_val = st.expect(op)
-
-                            # If projector is orthogonal to state, skip this term
-                            if abs(exp_val) < 1e-10:
-                                term_contributes = False
-                                break
-
-                    if not term_contributes:
-                        continue
-
-                    # This term contributes - apply it
-                    transformed_states = []
-                    for op, st in zip(term.factors, state.states):
-                        transformed_states.append(op << st)
-
-                    result = TensorState(transformed_states)
-                    results.append(result)
-
-                elif isinstance(term, YawOperator):
-                    result = term << state
-                    results.append(result)
-                else:
-                    continue
-
-            except Exception as e:
-                # Track errors for debugging
-                errors.append((term, str(e)))
-                continue
-
-        # Return the result(s)
-        if len(results) == 1:
-            return results[0]
-        elif len(results) == 0:
-            # *** Better error message ***
-            if errors:
-                error_msg = "Errors applying terms:\n"
-                for term, err in errors[:3]:  # Show first 3 errors
-                    error_msg += f"  {term}: {err}\n"
-                raise ValueError(error_msg)
-            else:
-                raise ValueError("No terms in sum could be applied to state (all filtered by projector orthogonality)")
-        else:
-            # Multiple results - create coherent superposition
-            # Each term contributes with amplitude 1 (equal superposition)
-            # For more sophisticated amplitude tracking, would need to
-            # analyze the operator coefficients
-            return SuperpositionState([(1.0, result) for result in results])
+        # Algebraic implementation: (A + B) << φ = (A + B)† % ((A + B) // φ)
+        return self.adjoint() % (self // state)
         
     def __str__(self):
         """Display as sum."""
@@ -2081,24 +1988,20 @@ class TensorProduct:
         return self.normalize()
             
     def __lshift__(self, state):
-        """Apply tensor product to state: (A ⊗ B) << (|ψ⟩ ⊗ |φ⟩)"""
-        if isinstance(state, TensorState):
-            if len(self.factors) != len(state.states):
-                raise ValueError(
-                    f"Tensor product has {len(self.factors)} factors "
-                    f"but state has {len(state.states)} factors"
-                )
+        """Apply tensor product to state: (A⊗B) << φ
+        
+        Implements: ((A⊗B) << φ)(C) = φ((A⊗B)† C (A⊗B))
+        
+        This is computed algebraically as: (A⊗B) << φ = (A⊗B)† % ((A⊗B) // φ)
+        
+        Args:
+            state: State functional to transform
             
-            # Apply each factor to corresponding state
-            transformed_states = []
-            for op, st in zip(self.factors, state.states):
-                transformed_states.append(op << st)
-            
-            return TensorState(transformed_states)
-        else:
-            # Single state - apply all factors sequentially?
-            # This is ambiguous, so raise error
-            raise ValueError("Cannot apply TensorProduct to non-tensor state")
+        Returns:
+            Transformed state functional
+        """
+        # Algebraic implementation: (A⊗B) << φ = (A⊗B)† % ((A⊗B) // φ)
+        return self.adjoint() % (self // state)
             
     def __matmul__(self, other):
         """Extend tensor product: (A ⊗ B) @ C = A ⊗ B ⊗ C
