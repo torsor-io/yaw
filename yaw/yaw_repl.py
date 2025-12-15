@@ -504,7 +504,7 @@ class YawREPL:
                 if result is not None:
                     # Store the result in the outer variable
                     self.variables.set(outer_var, result)
-                    return result
+                    return None  # Suppress output for assignments
             else:
                 # No outer assignment, just execute comprehension
                 result = self._execute_comprehension_with_assignment(line_stripped)
@@ -522,7 +522,7 @@ class YawREPL:
                 result = self._execute_list_comprehension(comprehension_part)
                 if result is not None:
                     self.variables.set(outer_var, result)
-                    return result
+                    return None  # Suppress output for assignments
             else:
                 result = self._execute_list_comprehension(line_stripped)
                 if result is not None:
@@ -1098,8 +1098,8 @@ class YawREPL:
                 for name, value in zip(names, result):
                     self.variables.set(name, value)
 
-                # Return the tuple for display
-                return result
+                # Return None to suppress output (like Python REPL)
+                return None
             else:
                 # Simple assignment: a = x
                 name = name_part
@@ -1107,8 +1107,8 @@ class YawREPL:
                 # Store in variables
                 self.variables.set(name, result)
 
-                # Return the result for display
-                return result
+                # Return None to suppress output (like Python REPL)
+                return None
 
         except Exception as e:
             return f"Error in assignment: {e}"
