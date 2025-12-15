@@ -227,7 +227,59 @@ class YawREPL:
 
         return line
     
+    def _preprocess_tensor_powers(self, line):
+        """Replace (@n) expr with expr ** n for tensor powers.
+        
+        Transforms:
+            (@3) char(Z, 0) → (char(Z, 0)) ** 3
+            init = (@5) X → init = (X) ** 5
+            
+        This provides convenient shorthand for tensor powers:
+            char(Z, 0) ** 3  means  char(Z, 0) @ char(Z, 0) @ char(Z, 0)
+        """
+        import re
+        
+        # Pattern: (@n) followed by rest of line
+        match = re.search(r'\(@(\d+)\)\s+(.+)', line)
+        
+        if match:
+            n = match.group(1)
+            rest = match.group(2).strip()
+            
+            # Check if there's an assignment before (@n)
+            assignment_match = re.match(r'(.+?=)\s*\(@\d+\)\s+(.+)', line)
+            if assignment_match:
+                # Handle: var = (@n) expr
+                lhs = assignment_match.group(1)
+                expr = assignment_match.group(2)
+                return f"{lhs} ({expr}) ** {n}"
+            else:
+                # Handle: (@n) expr (no assignment)
+                return f"({rest}) ** {n}"
+        
+        return line
+    
+        def replace_tensor_power(match):
+            n = match.group(1)
+            # Return empty string - we'll append ** n at the end
+            return ''
+        
+        # Check if line contains (@n) pattern
+        if re.search(r'\(@\d+\)', line):
+            # Extract the number
+            match = re.search(r'\(@(\d+)\)', line)
+            if match:
+                n = match.group(1)
+                # Remove the (@n) prefix and add ** n suffix
+                line = re.sub(r'\(@\d+\)\s*', '', line)
+                # Add ** n to the expression
+                # Handle case where line already has other operations
+                line = f'({line}) ** {n}'
+        
+        return line
+    
     def is_continuation(self, line):
+
         """Check if line is a continuation of current statement."""
         stripped = line.strip()
 
@@ -459,6 +511,7 @@ class YawREPL:
             return self._show_credits()
 
         line_stripped = self._preprocess_commutators(line_stripped)
+        line_stripped = self._preprocess_tensor_powers(line_stripped)
 
         # *** CRITICAL: Handle multi-line statements FIRST ***
         if self.in_statement:
