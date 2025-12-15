@@ -5130,6 +5130,30 @@ class Projector(YawOperator):
         """Projectors are self-adjoint: P† = P"""
         return self
     
+    def normalize(self, verbose=False):
+        """Projectors are already in canonical form.
+        
+        Returns self to preserve Projector type (important for expectation values).
+        """
+        return self
+    
+    def __rmul__(self, other):
+        """Right multiplication: other * proj
+        
+        Preserves Projector type when possible.
+        """
+        # If multiplying by identity, return self
+        if hasattr(other, '_expr') and (str(other._expr) == 'I' or other._expr == 1):
+            return self
+        
+        # If multiplying by a scalar, return scaled projector
+        if hasattr(other, '_expr') and other._expr.is_number:
+            # For now, fall back to YawOperator for scaled projectors
+            return YawOperator(other._expr * self._expr, self._algebra)
+        
+        # Otherwise fall back to standard multiplication
+        return YawOperator(other._expr * self._expr, self._algebra)
+    
     def __mul__(self, other):
         """Projector multiplication.
         
