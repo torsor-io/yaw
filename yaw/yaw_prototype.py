@@ -1129,6 +1129,42 @@ class YawOperator:
         """
         return self.adjoint()
     
+    
+    def lmul(self, state):
+        """Left multiplication: Create functional φ where φ(B) = ψ(AB)
+        
+        This allows building coherent superpositions algebraically.
+        
+        Args:
+            state: Base functional ψ
+            
+        Returns:
+            LeftMultipliedState instance
+            
+        Example:
+            >>> psi_00 = char(Z, 0) @ char(Z, 0)
+            >>> X_X = X @ X
+            >>> phi = X_X.lmul(psi_00)
+            >>> # Now phi(A) computes ⟨00|(X⊗X)A|00⟩ = ⟨11|A|00⟩
+        """
+        return LeftMultipliedState(self, state)
+    
+    def rmul(self, state):
+        """Right multiplication: Create functional φ where φ(B) = ψ(BA)
+        
+        Args:
+            state: Base functional ψ
+            
+        Returns:
+            RightMultipliedState instance
+            
+        Example:
+            >>> psi_00 = char(Z, 0) @ char(Z, 0)
+            >>> X_X = X @ X
+            >>> phi = X_X.rmul(psi_00)
+            >>> # Now phi(A) computes ⟨00|A(X⊗X)|00⟩ = ⟨00|A|11⟩
+        """
+        return RightMultipliedState(self, state)
     def normalize(self, verbose=False):
         """Apply algebra normalization rules.
         
@@ -1277,6 +1313,15 @@ class YawOperator:
                 return state
 
             # Case 2: Check if operators anticommute
+            # CRITICAL: Skip shortcuts for operators containing projectors
+            # Projectors don't follow simple commutation/anticommutation rules
+            # Example: proj(Z,0)*X anticommutes with Z, but proj(Z,0)*X|0⟩ = 0, not |1⟩
+            expr_str = str(self._expr)
+            if 'proj' in expr_str:
+                # Operator contains projectors - use general conjugation
+                return ConjugatedState(self, state)
+
+            # Case 2: Check if operators anticommute (ONLY for non-projector operators)
             if self.algebra and state.observable.algebra:
                 try:
                     # Try to compute anticommutator {A, B}
@@ -1631,6 +1676,42 @@ class TensorSum:
         """
         return self.adjoint()
     
+    def lmul(self, state):
+        """Left multiplication: Create functional φ where φ(B) = ψ(AB)
+        
+        This allows building coherent superpositions algebraically.
+        
+        Args:
+            state: Base functional ψ
+            
+        Returns:
+            LeftMultipliedState instance
+            
+        Example:
+            >>> psi_00 = char(Z, 0) @ char(Z, 0)
+            >>> X_X = X @ X
+            >>> phi = X_X.lmul(psi_00)
+            >>> # Now phi(A) computes ⟨00|(X⊗X)A|00⟩ = ⟨11|A|00⟩
+        """
+        return LeftMultipliedState(self, state)
+    
+    def rmul(self, state):
+        """Right multiplication: Create functional φ where φ(B) = ψ(BA)
+        
+        Args:
+            state: Base functional ψ
+            
+        Returns:
+            RightMultipliedState instance
+            
+        Example:
+            >>> psi_00 = char(Z, 0) @ char(Z, 0)
+            >>> X_X = X @ X
+            >>> phi = X_X.rmul(psi_00)
+            >>> # Now phi(A) computes ⟨00|A(X⊗X)|00⟩ = ⟨00|A|11⟩
+        """
+        return RightMultipliedState(self, state)
+
     def normalize(self, verbose=False):
         """Normalize and simplify the sum by combining like terms."""
         from collections import defaultdict
@@ -2087,6 +2168,42 @@ class TensorProduct:
         """
         return self.adjoint()
     
+    def lmul(self, state):
+        """Left multiplication: Create functional φ where φ(B) = ψ(AB)
+        
+        This allows building coherent superpositions algebraically.
+        
+        Args:
+            state: Base functional ψ
+            
+        Returns:
+            LeftMultipliedState instance
+            
+        Example:
+            >>> psi_00 = char(Z, 0) @ char(Z, 0)
+            >>> X_X = X @ X
+            >>> phi = X_X.lmul(psi_00)
+            >>> # Now phi(A) computes ⟨00|(X⊗X)A|00⟩ = ⟨11|A|00⟩
+        """
+        return LeftMultipliedState(self, state)
+    
+    def rmul(self, state):
+        """Right multiplication: Create functional φ where φ(B) = ψ(BA)
+        
+        Args:
+            state: Base functional ψ
+            
+        Returns:
+            RightMultipliedState instance
+            
+        Example:
+            >>> psi_00 = char(Z, 0) @ char(Z, 0)
+            >>> X_X = X @ X
+            >>> phi = X_X.rmul(psi_00)
+            >>> # Now phi(A) computes ⟨00|A(X⊗X)|00⟩ = ⟨00|A|11⟩
+        """
+        return RightMultipliedState(self, state)
+    
     @property
     def T(self):
         """Transpose shortcut: (A⊗B).T
@@ -2147,7 +2264,7 @@ class TensorProduct:
                 elif hasattr(u_factor, '__rshift__'):
                     conjugated = u_factor >> a_factor
                 else:
-                    # Manual conjugation: U† A U
+                    # Manual conjugation: Uâ€  A U
                     u_adj = u_factor.adjoint() if hasattr(u_factor, 'adjoint') else u_factor
                     conjugated = u_adj * a_factor * u_factor
                 
@@ -3323,6 +3440,229 @@ class TensorState(State):
     def __repr__(self):
         """Display representation."""
         return f"TensorState({', '.join(str(s) for s in self.states)})"
+    
+class LeftMultipliedState(State):
+    """State with left multiplication: (A <<<) φ
+    
+    Creates a functional where (A <<<) φ (B) = φ(AB)
+    
+    This allows building coherent superpositions algebraically:
+    φ_Bell = (1 + X⊗X <<<) char(Z,0)⊗char(Z,0) + (1 + X⊗X <<<) char(Z,1)⊗char(Z,1)
+    
+    Attributes:
+        operator: Left multiplication operator
+        state: Base functional
+        algebra: Inherited algebra
+    """
+    
+    def __init__(self, operator, state):
+        """Create left-multiplied functional.
+        
+        Args:
+            operator: Operator to left-multiply with
+            state: Base functional
+        """
+        self.operator = operator
+        self.state = state
+        self.algebra = getattr(operator, 'algebra', None)
+    
+    def expect(self, op, _depth=0):
+        """Compute expectation: (A <<<) φ (B) = φ(AB)"""
+        if _depth > 10:
+            return 0.0
+        
+        # Left multiply: measure A*op in original state
+        product = self.operator * op
+        if hasattr(product, 'normalize'):
+            product = product.normalize()
+        
+        return self.state.expect(product, _depth=_depth+1)
+    
+    def __str__(self):
+        return f"({self.operator} <<<) {self.state}"
+    
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+    
+    def __add__(self, other):
+        """Add left-multiplied states."""
+        if isinstance(other, (LeftMultipliedState, RightMultipliedState, State)):
+            # Create a sum of functionals
+            return SumState([self, other])
+        else:
+            raise TypeError(f"Cannot add LeftMultipliedState with {type(other)}")
+    
+    def __radd__(self, other):
+        """Right addition."""
+        if other == 0:
+            return self
+        return other + self
+    
+    def __mul__(self, scalar):
+        """Scalar multiplication."""
+        return ScaledState(scalar, self)
+    
+    def __rmul__(self, scalar):
+        """Right scalar multiplication."""
+        return ScaledState(scalar, self)
+    
+    def __truediv__(self, scalar):
+        """Division by scalar."""
+        return ScaledState(1/scalar, self)
+
+
+class RightMultipliedState(State):
+    """State with right multiplication: (>>> A) φ
+    
+    Creates a functional where (>>> A) φ (B) = φ(BA)
+    
+    Attributes:
+        operator: Right multiplication operator
+        state: Base functional
+        algebra: Inherited algebra
+    """
+    
+    def __init__(self, operator, state):
+        """Create right-multiplied functional.
+        
+        Args:
+            operator: Operator to right-multiply with
+            state: Base functional
+        """
+        self.operator = operator
+        self.state = state
+        self.algebra = getattr(operator, 'algebra', None)
+    
+    def expect(self, op, _depth=0):
+        """Compute expectation: (>>> A) φ (B) = φ(BA)"""
+        if _depth > 10:
+            return 0.0
+        
+        # Right multiply: measure op*A in original state
+        product = op * self.operator
+        if hasattr(product, 'normalize'):
+            product = product.normalize()
+        
+        return self.state.expect(product, _depth=_depth+1)
+    
+    def __str__(self):
+        return f"(>>> {self.operator}) {self.state}"
+    
+    def __ror__(self, operator):
+        """Enable A | state syntax."""
+        return self.expect(operator)
+    
+    def __add__(self, other):
+        """Add right-multiplied states."""
+        if isinstance(other, (LeftMultipliedState, RightMultipliedState, State)):
+            return SumState([self, other])
+        else:
+            raise TypeError(f"Cannot add RightMultipliedState with {type(other)}")
+    
+    def __radd__(self, other):
+        """Right addition."""
+        if other == 0:
+            return self
+        return other + self
+    
+    def __mul__(self, scalar):
+        """Scalar multiplication."""
+        return ScaledState(scalar, self)
+    
+    def __rmul__(self, scalar):
+        """Right scalar multiplication."""
+        return ScaledState(scalar, self)
+    
+    def __truediv__(self, scalar):
+        """Division by scalar."""
+        return ScaledState(1/scalar, self)
+
+
+class ScaledState(State):
+    """State scaled by a constant: c * φ
+    
+    Implements (c * φ)(A) = c * φ(A)
+    """
+    
+    def __init__(self, scalar, state):
+        self.scalar = scalar
+        self.state = state
+        self.algebra = getattr(state, 'algebra', None)
+    
+    def expect(self, op, _depth=0):
+        """Compute expectation: (c * φ)(A) = c * φ(A)"""
+        return self.scalar * self.state.expect(op, _depth=_depth)
+    
+    def __str__(self):
+        return f"{self.scalar} * {self.state}"
+    
+    def __ror__(self, operator):
+        return self.expect(operator)
+    
+    def __add__(self, other):
+        if isinstance(other, State):
+            return SumState([self, other])
+        else:
+            raise TypeError(f"Cannot add ScaledState with {type(other)}")
+    
+    def __radd__(self, other):
+        if other == 0:
+            return self
+        return other + self
+    
+    def __mul__(self, scalar):
+        return ScaledState(self.scalar * scalar, self.state)
+    
+    def __rmul__(self, scalar):
+        return ScaledState(scalar * self.scalar, self.state)
+    
+    def __truediv__(self, scalar):
+        return ScaledState(self.scalar / scalar, self.state)
+
+
+class SumState(State):
+    """Sum of state functionals: φ₁ + φ₂ + ...
+    
+    Implements (φ₁ + φ₂)(A) = φ₁(A) + φ₂(A)
+    """
+    
+    def __init__(self, states):
+        self.states = list(states)
+        self.algebra = getattr(states[0], 'algebra', None) if states else None
+    
+    def expect(self, op, _depth=0):
+        """Compute expectation: (φ₁ + φ₂)(A) = φ₁(A) + φ₂(A)"""
+        result = sum(state.expect(op, _depth=_depth) for state in self.states)
+        return _clean_number(result)
+    
+    def __str__(self):
+        return " + ".join(str(s) for s in self.states)
+    
+    def __ror__(self, operator):
+        return self.expect(operator)
+    
+    def __add__(self, other):
+        if isinstance(other, SumState):
+            return SumState(self.states + other.states)
+        elif isinstance(other, State):
+            return SumState(self.states + [other])
+        else:
+            raise TypeError(f"Cannot add SumState with {type(other)}")
+    
+    def __radd__(self, other):
+        if other == 0:
+            return self
+        return other + self
+    
+    def __mul__(self, scalar):
+        return ScaledState(scalar, self)
+    
+    def __rmul__(self, scalar):
+        return ScaledState(scalar, self)
+    
+    def __truediv__(self, scalar):
+        return ScaledState(1/scalar, self)
     
 class ConjugatedState(State):
     """State transformed by unitary: U << |ψ⟩.
@@ -5797,3 +6137,20 @@ def minimal_poly(op, state=None, tolerance=1e-10):
     poly = Poly(poly_expr, x)
     
     return poly, distinct_eigenvalues
+
+# Convenience constructor for sum states
+def sum_state(*states):
+    """Create a sum of state functionals.
+    
+    Args:
+        *states: State functionals to sum
+        
+    Returns:
+        SumState instance
+        
+    Example:
+        >>> psi_00 = char(Z, 0) @ char(Z, 0)
+        >>> X_X = X @ X
+        >>> phi = sum_state(psi_00, X_X.lmul(psi_00)) / sqrt(2)
+    """
+    return SumState(list(states))
