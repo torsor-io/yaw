@@ -1165,6 +1165,29 @@ class YawOperator:
             >>> # Now phi(A) computes ⟨00|A(X⊗X)|00⟩ = ⟨00|A|11⟩
         """
         return RightMultipliedState(self, state)
+    
+    def __mod__(self, state):
+        """Left multiplication using % operator: A % φ
+        
+        Syntactic sugar for A.lmul(φ).
+        Creates functional where φ(B) = ψ(AB).
+        
+        Example:
+            >>> phi = X_X % psi_00  # Same as X_X.lmul(psi_00)
+        """
+        return self.lmul(state)
+    
+    def __floordiv__(self, state):
+        """Right multiplication using // operator: A // φ
+        
+        Syntactic sugar for A.rmul(φ).
+        Creates functional where φ(B) = ψ(BA).
+        
+        Example:
+            >>> phi = X_X // psi_00  # Same as X_X.rmul(psi_00)
+        """
+        return self.rmul(state)
+    
     def normalize(self, verbose=False):
         """Apply algebra normalization rules.
         
@@ -1712,6 +1735,26 @@ class TensorSum:
         """
         return RightMultipliedState(self, state)
 
+    def __mod__(self, state):
+        """Left multiplication using % operator: (A + B) % φ
+        
+        Syntactic sugar for (A + B).lmul(φ).
+        
+        Example:
+            >>> phi = (X@I + Z@I) % psi_00
+        """
+        return self.lmul(state)
+    
+    def __floordiv__(self, state):
+        """Right multiplication using // operator: (A + B) // φ
+        
+        Syntactic sugar for (A + B).rmul(φ).
+        
+        Example:
+            >>> phi = (X@I + Z@I) // psi_00
+        """
+        return self.rmul(state)
+
     def normalize(self, verbose=False):
         """Normalize and simplify the sum by combining like terms."""
         from collections import defaultdict
@@ -2203,6 +2246,26 @@ class TensorProduct:
             >>> # Now phi(A) computes ⟨00|A(X⊗X)|00⟩ = ⟨00|A|11⟩
         """
         return RightMultipliedState(self, state)
+    
+    def __mod__(self, state):
+        """Left multiplication using % operator: (A⊗B) % φ
+        
+        Syntactic sugar for (A⊗B).lmul(φ).
+        
+        Example:
+            >>> phi = X_X % psi_00  # Same as X_X.lmul(psi_00)
+        """
+        return self.lmul(state)
+    
+    def __floordiv__(self, state):
+        """Right multiplication using // operator: (A⊗B) // φ
+        
+        Syntactic sugar for (A⊗B).rmul(φ).
+        
+        Example:
+            >>> phi = X_X // psi_00  # Same as X_X.rmul(psi_00)
+        """
+        return self.rmul(state)
     
     @property
     def T(self):
