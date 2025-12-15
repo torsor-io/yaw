@@ -4462,8 +4462,8 @@ class StMeasurement:
     
     Usage:
         >>> measure = stMeasure([K0, K1], state, seed=42)
-        >>> collapsed_state, prob = measure()
-        # Returns (Kᵢ << state / p(i), p(i)) for random outcome i
+        >>> collapsed_state, outcome_index = measure()
+        # Returns (K_i << state / p(i), i) for random outcome i
     
     Attributes:
         kraus_ops: List of Kraus operators
@@ -4493,7 +4493,7 @@ class StMeasurement:
         Returns collapsed state: ψ'(A) = ψ(Kᵢ†AKᵢ) / p(i)
         
         Returns:
-            (collapsed_state, p(i))
+            (collapsed_state, i) - tuple of collapsed state and outcome index
         """
         # Compute probabilities
         probs = []
@@ -4518,7 +4518,7 @@ class StMeasurement:
         K_i = self.kraus_ops[i]
         collapsed = CollapsedState(K_i, self.state, probs[i])
         
-        return (collapsed, probs[i])
+        return (collapsed, i)
     
     def __str__(self):
         return f"StMeasurement({len(self.kraus_ops)} outcomes)"
@@ -4560,7 +4560,7 @@ def stMeasure(kraus_ops, state, seed=None):
         >>> K0 = (I + Z) / 2  # Project to |0⟩
         >>> K1 = (I - Z) / 2  # Project to |1⟩
         >>> measure = stMeasure([K0, K1], psi0, seed=42)
-        >>> collapsed_state, prob = measure()
+        >>> collapsed_state, outcome_index = measure()
     """
     return StMeasurement(kraus_ops, state, seed)
 
