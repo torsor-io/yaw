@@ -1043,31 +1043,6 @@ class YawOperator:
             # Fall back
             return TensorProduct([other, self])
     
-    def __pow__(self, n):
-        """Tensor power: operator ** n = operator @ operator @ ... @ operator (n times)
-        
-        Args:
-            n: Number of copies (must be positive integer)
-            
-        Returns:
-            TensorProduct with n copies of self
-            
-        Example:
-            >>> X ** 3  # Returns X @ X @ X
-        """
-        if not isinstance(n, int) or n < 1:
-            raise ValueError(f"Tensor power must be positive integer, got {n}")
-        
-        if n == 1:
-            return self
-        
-        # Build tensor product of n copies
-        result = self
-        for _ in range(n - 1):
-            result = result @ self
-        
-        return result
-    
     def __rmul__(self, other):
         """Right multiplication (for scalar * operator)."""
         return YawOperator(other * self._expr, self.algebra)
@@ -2004,31 +1979,6 @@ class TensorSum:
         
         return str(structure)
     
-    def __pow__(self, n):
-        """Tensor power: (A + B) ** n = (A + B) @ (A + B) @ ... (n times)
-        
-        Args:
-            n: Number of copies (must be positive integer)
-            
-        Returns:
-            TensorSum with n copies of self
-            
-        Example:
-            >>> (X + Z) ** 3  # Returns (X + Z) @ (X + Z) @ (X + Z)
-        """
-        if not isinstance(n, int) or n < 1:
-            raise ValueError(f"Tensor power must be positive integer, got {n}")
-        
-        if n == 1:
-            return self
-        
-        # Build tensor product of n copies
-        result = self
-        for _ in range(n - 1):
-            result = result @ self
-        
-        return result
-
 class TensorProduct:
     """Tensor product of operators: A ⊗ B ⊗ C"""
     
@@ -2135,31 +2085,6 @@ class TensorProduct:
             return TensorProduct(new_factors)
         else:
             raise TypeError(f"Cannot divide TensorProduct by {type(other)}")
-    
-    def __pow__(self, n):
-        """Tensor power: (A @ B) ** n = (A @ B) @ (A @ B) @ ... (n times)
-        
-        Args:
-            n: Number of copies (must be positive integer)
-            
-        Returns:
-            TensorProduct with n copies of self
-            
-        Example:
-            >>> (X @ Y) ** 3  # Returns (X @ Y) @ (X @ Y) @ (X @ Y)
-        """
-        if not isinstance(n, int) or n < 1:
-            raise ValueError(f"Tensor power must be positive integer, got {n}")
-        
-        if n == 1:
-            return self
-        
-        # Build tensor product of n copies
-        result = self
-        for _ in range(n - 1):
-            result = result @ self
-        
-        return result
     
     def adjoint(self):
         """Hermitian conjugate of tensor product: (A⊗B)† = A†⊗B†
@@ -5586,6 +5511,43 @@ def ctrl(control_op, controlled_ops):
             result = term
         else:
             result = result + term
+    
+    return result
+
+def tensor_power(obj, n):
+    """Create tensor power: obj @ obj @ ... @ obj (n times)
+    
+    This function creates n copies of an object combined with tensor product.
+    Use this for explicit tensor powers, as opposed to algebraic powers.
+    
+    Args:
+        obj: Object to tensor (State, YawOperator, TensorProduct, etc.)
+        n: Number of copies (must be positive integer)
+        
+    Returns:
+        Tensor product of n copies
+        
+    Example:
+        >>> tensor_power(X, 3)  # Returns X @ X @ X
+        >>> tensor_power(char(Z, 0), 5)  # Returns |0⟩⊗|0⟩⊗|0⟩⊗|0⟩⊗|0⟩
+        
+    Note:
+        For operators, X ** 3 means algebraic power (X·X·X),
+        while tensor_power(X, 3) means tensor power (X⊗X⊗X).
+        
+        For states, state ** 3 and tensor_power(state, 3) are equivalent
+        since states don't have algebraic multiplication.
+    """
+    if not isinstance(n, int) or n < 1:
+        raise ValueError(f"Tensor power n must be positive integer, got {n}")
+    
+    if n == 1:
+        return obj
+    
+    # Build tensor product of n copies
+    result = obj
+    for _ in range(n - 1):
+        result = result @ obj
     
     return result
 
