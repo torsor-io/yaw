@@ -61,7 +61,7 @@ python -m yaw.yaw_repl < examples/hello_world.yaw
 ### Tutorials
 
 Check out the [tutorials](https://torsor.io/#library)!
-- [Tutorial 1: Intro to ~yaw~](https://torsor.io/assets/library/yaw/yaw011.html)
+- [Tutorial 1: Intro to `yaw`](https://torsor.io/assets/library/yaw/yaw011.html)
 - [Tutorial 2: Measurement and teleportation](https://torsor.io/assets/library/yaw/teleport.html)
 
 ### Three ways to use `yaw`
