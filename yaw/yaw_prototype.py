@@ -3671,6 +3671,11 @@ class LeftMultipliedState(State):
         if _depth > 10:
             return 0.0
         
+        # Special case: if op is a Projector, use its expect method
+        # This handles cross-basis overlaps correctly
+        if isinstance(op, Projector):
+            return op.expect(self)
+        
         # Left multiply: measure A*op in original state
         # NOTE: Normalization is skipped here for performance
         # It doesn't affect the expectation value, only the representation
