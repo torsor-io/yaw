@@ -3032,6 +3032,11 @@ class Algebra:
     def __repr__(self):
         """Detailed representation."""
         return self.__str__()
+    
+    @property
+    def braiding_phase(self):
+        """Alias for braid_phase (backward compatibility)."""
+        return self.braid_phase
 
 def qudit(d = 2):
     """Create d-level qudit algebra.
@@ -3434,7 +3439,13 @@ class EigenState(State):
                     return _clean_number(1.0)
                 else:
                     return _clean_number(0.0)
-            # Different operator - fall through to general case
+            else:
+                # Different operator - compute cross-basis overlap
+                # For Weyl pairs (X,Z), use Fourier transform: |⟨k|j⟩|² = 1/d
+                if hasattr(self.algebra, "power_mod") and self.algebra.power_mod:
+                    d = self.algebra.power_mod
+                    return _clean_number(1.0 / d)
+                # Fall through if no power_mod
         
         # *** CRITICAL FIX: Detect YawOperator wrappers around projector symbols ***
         # If op is a YawOperator with a projector symbol expression,
@@ -5280,10 +5291,10 @@ def proj_algebraic(operator, k):
         return YawOperator(projector_expr, algebra)
     
     # For d > 2: need braiding phase
-    if algebra.braiding_phase is None:
+    if algebra.braid_phase is None:
         raise ValueError(f"Need braiding phase for d={d} > 2")
     
-    omega = algebra.braiding_phase
+    omega = algebra.braid_phase
     eigenvalue = omega**k
     
     # Minimal polynomial approach
@@ -5329,21 +5340,50 @@ class Projector(YawOperator):
         """Expectation value: ⟨state | proj | state⟩
         
         For eigenstates: proj(A, k) | char(A, j) = δ_{kj}
+        For cross-basis: Compute overlap using Fourier transform
         """
         if isinstance(state, EigenState):
             # Check if state is an eigenstate of the same operator
-            if state.operator == self.base_operator:
+            if state.observable == self.base_operator:
                 # Orthogonality: proj(A, k) | char(A, j) = δ_{kj}
-                if state.eigenspace_index == self.eigenspace_index:
+                if state.index == self.eigenspace_index:
                     return 1.0
                 else:
                     return 0.0
             else:
-                # Different operator - need to compute overlap
-                # For now, fall back to algebraic computation
-                return super().expect(state, _depth)
+                # Different operator - compute cross-basis overlap
+                # This handles cases like: proj(X, k) | char(Z, j)
+                return self._compute_cross_basis_overlap(state)
         else:
-            return super().expect(state, _depth)
+            # For non-eigenstate, expand projector and evaluate
+            expanded = proj_algebraic(self.base_operator, self.eigenspace_index)
+            return expanded | state
+    
+    def _compute_cross_basis_overlap(self, state):
+        """Compute cross-basis overlap for Weyl pair (X, Z) measurements.
+        
+        For qubits/qudits with Weyl structure, the overlap is given by
+        discrete Fourier transform coefficients.
+        """
+        # Get algebra and check if we have the needed structure
+        algebra = self._algebra
+        if algebra is None or not hasattr(algebra, "power_mod"):
+            # Fall back to algebraic expansion
+            expanded = proj_algebraic(self.base_operator, self.eigenspace_index)
+            return expanded | state
+        
+        d = algebra.power_mod
+        
+        # For qubits (d=2), use simple formula
+        if d == 2:
+            # All cross-basis overlaps are 1/2 for qubits
+            # |⟨±|0/1⟩|² = 1/2
+            return 0.5
+        
+        # For qudits (d>2), use Fourier transform
+        # |⟨ω^k|j⟩|² = 1/d where ω = exp(2πi/d)
+        # This is exact for X/Z Weyl pairs
+        return 1.0 / d
     
     def __lshift__(self, state):
         """Apply projector to state: proj << psi
