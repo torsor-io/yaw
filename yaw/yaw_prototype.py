@@ -73,6 +73,61 @@ class DisableNormalization:
 
 # ============================================================================
 
+# ============================================================================
+# NUMERICAL QUDIT BACKEND (Feature Flag)
+# ============================================================================
+# Enable numerical matrix backend for d>2 systems (qutrits, ququarts, etc.)
+# Set to False to revert to original behavior (raises errors for d>2)
+ENABLE_NUMERICAL_QUDITS = True
+
+# Lazy import of numerical backend (only loaded when needed)
+_qudit_backend_cache = {}
+
+def _get_qudit_backend(d):
+    """Get or create numerical backend instance for dimension d.
+    
+    Uses lazy loading and caching to avoid importing unless needed.
+    """
+    if d not in _qudit_backend_cache:
+        try:
+            from qudit_backend import QuditBackend
+            _qudit_backend_cache[d] = QuditBackend(d)
+        except ImportError:
+            raise ImportError(
+                "Numerical qudit backend requires qudit_backend.py\n"
+                "Place qudit_backend.py in the same directory as yaw_prototype.py"
+            )
+    return _qudit_backend_cache[d]
+
+def _numerical_algebra_ops(algebra):
+    """Get numerical versions of I, X, Z for d>2 algebras.
+    
+    Returns (I_num, X_num, Z_num) as numerical operators.
+    """
+    if not hasattr(algebra, 'power_mod'):
+        raise ValueError("Algebra must have power_mod attribute")
+    
+    d = algebra.power_mod
+    backend = _get_qudit_backend(d)
+    
+    # Create numerical identity
+    I_num = _NumericalOperator(backend)
+    I_num._matrix = backend.I
+    I_num.algebra = algebra
+    
+    # Create numerical X
+    X_num = _NumericalOperator(backend)
+    X_num._matrix = backend.X
+    X_num.algebra = algebra
+    
+    # Create numerical Z
+    Z_num = _NumericalOperator(backend)
+    Z_num._matrix = backend.Z
+    Z_num.algebra = algebra
+    
+    return I_num, X_num, Z_num
+# ============================================================================
+
 __version__ = "0.1.1"
 __all__ = [
     'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit',
@@ -88,7 +143,10 @@ __all__ = [
     'comm', 'acomm',
     'set_auto_normalization', 'DisableNormalization',  # Performance control
     'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
-    'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed'
+    'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
+    # Numerical qudit backend
+    'ENABLE_NUMERICAL_QUDITS', '_numerical_algebra_ops', '_get_qudit_backend',
+    '_NumericalEigenState', '_NumericalProjector', '_NumericalOperator',
 ]
 
 # ============================================================================
@@ -4637,6 +4695,45 @@ class StMeasurement:
         Returns:
             (collapsed_state, i) - tuple of collapsed state and outcome index
         """
+        # ========================================================================
+        # NUMERICAL QUDIT BACKEND: Check if using numerical backend
+        # ========================================================================
+        if ENABLE_NUMERICAL_QUDITS:
+            # Check if state is numerical
+            is_numerical = isinstance(self.state, (_NumericalEigenState, _NumericalLeftMultipliedState))
+            
+            if is_numerical:
+                # Extract backend and state vector
+                if isinstance(self.state, _NumericalEigenState):
+                    backend = self.state.backend
+                    state_vec = self.state._vector.copy()
+                elif isinstance(self.state, _NumericalLeftMultipliedState):
+                    backend = self.state.backend
+                    state_vec = self.state._vector.copy()
+                
+                # Normalize state vector
+                norm = np.linalg.norm(state_vec)
+                if norm > 1e-10:
+                    state_vec = state_vec / norm
+                
+                # Extract projector matrices
+                proj_matrices = [k._matrix for k in self.kraus_ops]
+                
+                # Perform measurement using backend
+                collapsed_vec, outcome = backend.measure(state_vec, proj_matrices, seed=self.seed)
+                
+                # Create collapsed state
+                collapsed_state = _NumericalEigenState.__new__(_NumericalEigenState)
+                collapsed_state.backend = backend
+                collapsed_state.algebra = backend
+                collapsed_state._vector = collapsed_vec
+                collapsed_state.index = outcome
+                collapsed_state.observable = self.kraus_ops[outcome].observable
+                
+                return (collapsed_state, outcome)
+        # ========================================================================
+        
+        # Original symbolic implementation
         # Compute probabilities
         probs = []
         for K in self.kraus_ops:
@@ -5263,6 +5360,15 @@ def proj(operator, k):
     if k < 0 or k >= d:
         raise ValueError(f"Eigenspace index must be in range [0, {d-1}]")
     
+    # ========================================================================
+    # NUMERICAL QUDIT BACKEND: Check dimension and dispatch
+    # ========================================================================
+    if ENABLE_NUMERICAL_QUDITS and d > 2:
+        backend = _get_qudit_backend(d)
+        return _NumericalProjector(operator, k, backend)
+    # ========================================================================
+    
+    # Original symbolic implementation (d=2 or flag disabled)
     return Projector(operator, k, algebra)
 
 def proj_algebraic(operator, k):
@@ -5283,6 +5389,15 @@ def proj_algebraic(operator, k):
     if k < 0 or k >= d:
         raise ValueError(f"Eigenspace index must be in range [0, {d-1}]")
     
+    # ========================================================================
+    # NUMERICAL QUDIT BACKEND: Check dimension and dispatch
+    # ========================================================================
+    if ENABLE_NUMERICAL_QUDITS and d > 2:
+        backend = _get_qudit_backend(d)
+        return _NumericalProjector(operator, k, backend)
+    # ========================================================================
+    
+    # Original symbolic implementation (d=2 or flag disabled)
     # Extract SymPy expressions
     I_expr = _get_sympy_expr(algebra.I)
     op_expr = _get_sympy_expr(operator)
@@ -5794,6 +5909,289 @@ def tensor_power(op, n):
     """
     return TensorProduct(*[op for _ in range(n)])
 
+# ============================================================================
+# NUMERICAL QUDIT BACKEND: Wrapper Classes
+# ============================================================================
+# These classes wrap numerical backend objects to provide the same interface
+# as symbolic yaw objects (EigenState, Projector, etc.)
+
+class _NumericalEigenState:
+    """Numerical eigenstate wrapper that mimics EigenState interface.
+    
+    This allows numerical states to work seamlessly with existing yaw code.
+    """
+    
+    def __init__(self, observable, index, backend):
+        self.observable = observable
+        self.index = index
+        self.backend = backend
+        self.algebra = observable.algebra
+        
+        # Determine which basis this eigenstate is in
+        obs_str = str(observable)
+        
+        # Handle powers: X**2 → extract X
+        base_obs = obs_str.split('**')[0].strip()
+        
+        if base_obs == 'X':
+            # X eigenstate = column of Fourier matrix
+            self._vector = backend.H[:, index].copy()
+        elif base_obs == 'Z':
+            # Z eigenstate = standard basis vector
+            self._vector = np.zeros(backend.d, dtype=complex)
+            self._vector[index] = 1.0
+        else:
+            raise ValueError(
+                f"Cannot create eigenstate for observable: {observable}\n"
+                f"Supported: X, Z (and powers)"
+            )
+    
+    def expect(self, operator):
+        """Compute expectation value: ⟨ψ|O|ψ⟩."""
+        if isinstance(operator, _NumericalProjector):
+            # ⟨ψ|P|ψ⟩
+            prob = np.real(self._vector.conj() @ operator._matrix @ self._vector)
+            return max(0.0, prob)
+        
+        elif isinstance(operator, _NumericalOperator):
+            # ⟨ψ|O|ψ⟩
+            val = self._vector.conj() @ operator._matrix @ self._vector
+            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+        
+        else:
+            raise NotImplementedError(
+                f"Cannot compute expect with {type(operator).__name__}\n"
+                f"Supported: _NumericalProjector, _NumericalOperator"
+            )
+    
+    def __repr__(self):
+        return f"char({self.observable}, {self.index})"
+
+
+class _NumericalProjector:
+    """Numerical projector wrapper that mimics Projector interface."""
+    
+    def __init__(self, observable, index, backend):
+        self.observable = observable
+        self.index = index
+        self.backend = backend
+        self.algebra = observable.algebra
+        
+        # Determine which basis projector is in
+        obs_str = str(observable)
+        base_obs = obs_str.split('**')[0].strip()
+        
+        if base_obs == 'X':
+            self._matrix = backend.projector('X', index)
+        elif base_obs == 'Z':
+            self._matrix = backend.projector('Z', index)
+        else:
+            raise ValueError(f"Cannot create projector for: {observable}")
+    
+    def expect(self, state):
+        """Compute ⟨ψ|P|ψ⟩ or ⟨ψ|P†P|ψ⟩."""
+        if isinstance(state, _NumericalEigenState):
+            prob = np.real(state._vector.conj() @ self._matrix @ state._vector)
+            return max(0.0, prob)
+        
+        elif isinstance(state, _NumericalLeftMultipliedState):
+            # For A|ψ⟩, compute ⟨ψ|A†P|ψ⟩
+            psi_vec = state._vector
+            result = psi_vec.conj() @ self._matrix @ psi_vec
+            return max(0.0, np.real(result))
+        
+        else:
+            raise NotImplementedError(f"Cannot compute expect with {type(state).__name__}")
+    
+    def adjoint(self):
+        """Return adjoint (projectors are Hermitian, so P† = P)."""
+        return self
+    
+    def __mul__(self, other):
+        """Multiply with scalar or operator."""
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix * other
+            result.algebra = self.algebra
+            return result
+        
+        elif isinstance(other, (_NumericalProjector, _NumericalOperator)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix @ other._matrix
+            result.algebra = self.algebra
+            return result
+        
+        else:
+            raise NotImplementedError(f"Cannot multiply with {type(other).__name__}")
+    
+    def __rmul__(self, other):
+        """Right multiplication: scalar * projector."""
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = other * self._matrix
+            result.algebra = self.algebra
+            return result
+        else:
+            raise NotImplementedError(f"Cannot right-multiply with {type(other).__name__}")
+    
+    def __repr__(self):
+        return f"proj({self.observable}, {self.index})"
+
+
+class _NumericalOperator:
+    """General numerical operator (for products, sums, etc.)."""
+    
+    def __init__(self, backend):
+        self.backend = backend
+        self.algebra = None
+        self._matrix = np.eye(backend.d, dtype=complex)
+    
+    def __mul__(self, other):
+        """Multiply operators or scale by scalar."""
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix * other
+            result.algebra = self.algebra
+            return result
+        
+        elif isinstance(other, (_NumericalOperator, _NumericalProjector)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix @ other._matrix
+            result.algebra = self.algebra
+            return result
+        
+        else:
+            raise NotImplementedError(f"Cannot multiply with {type(other).__name__}")
+    
+    def __add__(self, other):
+        """Add operators."""
+        if isinstance(other, (_NumericalOperator, _NumericalProjector)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix + other._matrix
+            result.algebra = self.algebra
+            return result
+        else:
+            raise NotImplementedError(f"Cannot add with {type(other).__name__}")
+    
+    def __sub__(self, other):
+        """Subtract operators."""
+        if isinstance(other, (_NumericalOperator, _NumericalProjector)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix - other._matrix
+            result.algebra = self.algebra
+            return result
+        else:
+            raise NotImplementedError(f"Cannot subtract with {type(other).__name__}")
+    
+    def __rmul__(self, other):
+        """Right multiplication: scalar * operator."""
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = other * self._matrix
+            result.algebra = self.algebra
+            return result
+        else:
+            return NotImplemented
+    
+    def __radd__(self, other):
+        """Right addition: scalar + operator."""
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = other * np.eye(self.backend.d, dtype=complex) + self._matrix
+            result.algebra = self.algebra
+            return result
+        else:
+            return NotImplemented
+    
+    def __rsub__(self, other):
+        """Right subtraction: scalar - operator."""
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = other * np.eye(self.backend.d, dtype=complex) - self._matrix
+            result.algebra = self.algebra
+            return result
+        else:
+            return NotImplemented
+    
+    def __neg__(self):
+        """Unary negation: -operator."""
+        result = _NumericalOperator(self.backend)
+        result._matrix = -self._matrix
+        result.algebra = self.algebra
+        return result
+    
+    def __pow__(self, n):
+        """Raise operator to power."""
+        if not isinstance(n, int) or n < 0:
+            raise ValueError("Power must be non-negative integer")
+        
+        result = _NumericalOperator(self.backend)
+        result.algebra = self.algebra
+        
+        if n == 0:
+            result._matrix = np.eye(self.backend.d, dtype=complex)
+        else:
+            result._matrix = np.linalg.matrix_power(self._matrix, n)
+        
+        return result
+    
+    def adjoint(self):
+        """Return adjoint (Hermitian conjugate)."""
+        result = _NumericalOperator(self.backend)
+        result._matrix = self._matrix.conj().T
+        result.algebra = self.algebra
+        return result
+    
+    def __lshift__(self, state):
+        """Apply to state: state << operator means operator|state⟩."""
+        return _NumericalLeftMultipliedState(self, state)
+    
+    def __repr__(self):
+        return f"NumericalOperator({self.backend.d}x{self.backend.d})"
+
+
+class _NumericalLeftMultipliedState:
+    """State with operator applied: O|ψ⟩."""
+    
+    def __init__(self, operator, base_state):
+        self.operator = operator
+        self.base_state = base_state
+        self.backend = operator.backend
+        
+        # Compute the resulting state vector
+        if isinstance(base_state, _NumericalEigenState):
+            self._vector = operator._matrix @ base_state._vector
+        elif isinstance(base_state, _NumericalLeftMultipliedState):
+            # Nested: O₁(O₂|ψ⟩) = (O₁O₂)|ψ⟩
+            combined_mat = operator._matrix @ base_state.operator._matrix
+            self._vector = combined_mat @ base_state.base_state._vector
+        else:
+            raise ValueError(f"Cannot apply to {type(base_state).__name__}")
+        
+        # Don't normalize here - normalization happens during measurement
+    
+    def expect(self, operator):
+        """Compute expectation: ⟨Aψ|O|Aψ⟩."""
+        # Special case: if operator is projector, delegate to projector
+        if isinstance(operator, _NumericalProjector):
+            return operator.expect(self)
+        
+        # Normalize first
+        norm = np.linalg.norm(self._vector)
+        if norm < 1e-10:
+            return 0.0
+        normalized = self._vector / norm
+        
+        if isinstance(operator, (_NumericalProjector, _NumericalOperator)):
+            val = normalized.conj() @ operator._matrix @ normalized
+            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+        else:
+            raise NotImplementedError(f"Cannot compute expect with {type(operator).__name__}")
+    
+    def __repr__(self):
+        return f"{self.operator} << {self.base_state}"
+# ============================================================================
+
 def char(observable: YawOperator, index: int) -> State:
     """Create eigenstate (characteristic state) of observable.
     
@@ -5823,6 +6221,23 @@ def char(observable: YawOperator, index: int) -> State:
         >>> psi_0.expect(alg.Z)  # Returns 1.0
         >>> psi_1.expect(alg.Z)  # Returns -1.0
     """
+    # ========================================================================
+    # NUMERICAL QUDIT BACKEND: Check dimension and dispatch
+    # ========================================================================
+    if ENABLE_NUMERICAL_QUDITS:
+        algebra = observable.algebra
+        
+        # Check if this is a d>2 system
+        if algebra and hasattr(algebra, 'power_mod'):
+            d = algebra.power_mod
+            
+            if d > 2:
+                # Use numerical backend
+                backend = _get_qudit_backend(d)
+                return _NumericalEigenState(observable, index, backend)
+    # ========================================================================
+    
+    # Original symbolic implementation (d=2 or flag disabled)
     if not observable.algebra:
         raise ValueError("Observable must be associated with an algebra")
     return EigenState(observable, index, observable.algebra)
