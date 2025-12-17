@@ -138,7 +138,7 @@ __all__ = [
     'OpBranches', 'opBranches', 'StBranches', 'stBranches',
     'compose_st_branches', 'compose_op_branches',
     'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
-    'QFT', 'qft', 'proj', 'proj_general', 'ctrl', 'ctrl_spectral', 'ctrl_single',
+    'QFT', 'qft', 'tensor_qft', 'proj', 'proj_general', 'ctrl', 'ctrl_spectral', 'ctrl_single',
     'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
     'comm', 'acomm',
     'set_auto_normalization', 'DisableNormalization',  # Performance control
@@ -5219,6 +5219,184 @@ def qft(gen_x, gen_z):
         >>> (W3 >> alg3.X).normalize()  # Returns Z^2
     """
     return QFT(gen_x, gen_z)
+
+def tensor_qft(*qfts):
+    """Create tensor product of QFT operators.
+    
+    Enables applying multiple QFTs to a tensor product operator,
+    with each QFT acting on its corresponding factor. This is essential
+    for the abelian hidden subgroup problem and period finding on
+    products of cyclic groups.
+    
+    The tensor QFT applies factor-by-factor conjugation:
+        (W₁⊗W₂) >> (A₁⊗A₂) = (W₁>>A₁) ⊗ (W₂>>A₂)
+    
+    Args:
+        *qfts: QFT objects, one for each tensor factor
+        
+    Returns:
+        TensorQFT object with __rshift__ and __lshift__ support
+        
+    Example - Period finding on Z₃ × Z₅:
+        >>> # Create two qudit algebras
+        >>> alg1 = qudit(3)
+        >>> alg2 = qudit(5)
+        >>> 
+        >>> # Create QFT for each factor
+        >>> qft1 = qft(alg1.X, alg1.Z)
+        >>> qft2 = qft(alg2.X, alg2.Z)
+        >>> 
+        >>> # Combine into tensor QFT
+        >>> W = tensor_qft(qft1, qft2)
+        >>> 
+        >>> # Oracle with period (1, 2) in Z₃ × Z₅
+        >>> # Oracle marks cosets: sum of (Z₁^k ⊗ Z₂^(2k)) for k
+        >>> oracle = sum([alg1.Z**k @ alg2.Z**(2*k % 5) 
+        ...               for k in range(15)])  # LCM(3,5) = 15
+        >>> 
+        >>> # Apply tensor QFT
+        >>> transformed = W >> oracle
+        >>> 
+        >>> # Apply to state
+        >>> initial = char(alg1.Z, 0) @ char(alg2.Z, 0)
+        >>> final_state = W << initial
+        
+    Example - Boolean HSP (period finding in Z₂ⁿ):
+        >>> # Create n qubits
+        >>> n = 4
+        >>> algs = [qubit() for _ in range(n)]
+        >>> qfts = [qft(alg.X, alg.Z) for alg in algs]
+        >>> W = tensor_qft(*qfts)
+        >>> 
+        >>> # Hidden period 1010 (binary)
+        >>> period = [1, 0, 1, 0]
+        >>> oracle = sum([tensor(*[alg.Z**(k*p) 
+        ...                        for alg, p in zip(algs, period)])
+        ...               for k in range(2**n)])
+        >>> 
+        >>> state = tensor(*[char(alg.Z, 0) for alg in algs])
+        >>> transformed = (W >> oracle) << state
+    
+    Note:
+        For state picture (W << state), the QFT is applied as an automorphism
+        on the state functional. This is implemented by transforming each
+        component of the tensor product state.
+    """
+    
+    class TensorQFT:
+        """Tensor product of QFT operators."""
+        
+        def __init__(self, qfts):
+            self.qfts = list(qfts)
+            
+            # Check that all are QFT instances
+            for i, q in enumerate(self.qfts):
+                if not isinstance(q, QFT):
+                    raise TypeError(
+                        f"Factor {i} is {type(q).__name__}, expected QFT"
+                    )
+        
+        def __rshift__(self, operator):
+            """Apply tensor QFT via conjugation: W >> A
+            
+            For tensor products: (W₁⊗W₂) >> (A₁⊗A₂) = (W₁>>A₁) ⊗ (W₂>>A₂)
+            For single operators: assumes operator acts on first subsystem
+            
+            Args:
+                operator: Operator to conjugate
+                
+            Returns:
+                Conjugated operator
+            """
+            if isinstance(operator, TensorProduct):
+                if len(operator.factors) != len(self.qfts):
+                    raise ValueError(
+                        f"Operator has {len(operator.factors)} factors "
+                        f"but tensor QFT has {len(self.qfts)} components"
+                    )
+                
+                # Apply each QFT to corresponding factor
+                conjugated_factors = []
+                for qft_i, op_i in zip(self.qfts, operator.factors):
+                    conjugated_factors.append(qft_i >> op_i)
+                
+                return TensorProduct(conjugated_factors)
+            
+            elif isinstance(operator, TensorSum):
+                # Distribute over sum: W >> (A + B) = (W >> A) + (W >> B)
+                conjugated_terms = []
+                for term in operator.terms:
+                    conjugated_terms.append(self >> term)
+                return TensorSum(conjugated_terms)
+            
+            elif isinstance(operator, YawOperator):
+                # Single operator - apply first QFT only
+                # Equivalent to W₁⊗I⊗I >> A⊗I⊗I
+                if len(self.qfts) > 1:
+                    import warnings
+                    warnings.warn(
+                        "Applying tensor QFT to single operator - "
+                        "only first QFT will be applied. "
+                        "Consider tensorizing the operator first."
+                    )
+                return self.qfts[0] >> operator
+            
+            else:
+                raise TypeError(
+                    f"Cannot apply tensor QFT to {type(operator).__name__}"
+                )
+        
+        def __lshift__(self, state):
+            """Apply tensor QFT to state: W << ψ
+            
+            Transforms state via automorphism. For a state ψ,
+            (W << ψ)(A) = ψ(W† A W) = ψ(W >> A)
+            
+            This is implemented by creating a transformed state functional.
+            
+            Args:
+                state: State to transform
+                
+            Returns:
+                TransformedState with QFT automorphism
+            """
+            if isinstance(state, TensorState):
+                if len(state.states) != len(self.qfts):
+                    raise ValueError(
+                        f"State has {len(state.states)} factors "
+                        f"but tensor QFT has {len(self.qfts)} components"
+                    )
+                
+                # Apply each QFT to corresponding state factor
+                transformed_states = []
+                for qft_i, state_i in zip(self.qfts, state.states):
+                    transformed_states.append(qft_i << state_i)
+                
+                return TensorState(transformed_states)
+            
+            elif isinstance(state, State):
+                # Single state - apply first QFT only
+                if len(self.qfts) > 1:
+                    import warnings
+                    warnings.warn(
+                        "Applying tensor QFT to single state - "
+                        "only first QFT will be applied. "
+                        "Consider tensorizing the state first."
+                    )
+                return self.qfts[0] << state
+            
+            else:
+                raise TypeError(
+                    f"Cannot apply tensor QFT to {type(state).__name__}"
+                )
+        
+        def __str__(self):
+            return f"tensor_qft({len(self.qfts)} factors)"
+        
+        def __repr__(self):
+            return f"TensorQFT({len(self.qfts)} QFTs)"
+    
+    return TensorQFT(qfts)
 
 # ============================================================================
 # PROJECTORS (MINIMAL POLYNOMIAL METHOD)
