@@ -114,16 +114,19 @@ def _numerical_algebra_ops(algebra):
     I_num = _NumericalOperator(backend)
     I_num._matrix = backend.I
     I_num.algebra = algebra
+    I_num.name = 'I'
     
     # Create numerical X
     X_num = _NumericalOperator(backend)
     X_num._matrix = backend.X
     X_num.algebra = algebra
+    X_num.name = 'X'
     
     # Create numerical Z
     Z_num = _NumericalOperator(backend)
     Z_num._matrix = backend.Z
     Z_num.algebra = algebra
+    Z_num.name = 'Z'
     
     return I_num, X_num, Z_num
 # ============================================================================
@@ -3121,10 +3124,26 @@ def qudit(d = 2):
             rels=['herm', 'unit', 'anti']
         )
     else:
-        return Algebra(
+        # Create algebra with power and braiding relations
+        algebra = Algebra(
             gens=['X', 'Z'],
             rels=['herm', 'unit', f'pow({d})', f'braid(exp(2*pi*I/{d}))']
         )
+        
+        # ====================================================================
+        # NUMERICAL BACKEND: Replace symbolic generators for d > 2
+        # ====================================================================
+        if ENABLE_NUMERICAL_QUDITS and d > 2:
+            # Get numerical versions of I, X, Z
+            I_num, X_num, Z_num = _numerical_algebra_ops(algebra)
+            
+            # Replace symbolic generators with numerical ones
+            algebra.I = I_num
+            algebra.generators['X'] = X_num
+            algebra.generators['Z'] = Z_num
+        # ====================================================================
+        
+        return algebra
 
 def qubit():
     return qudit(2)
@@ -5052,6 +5071,19 @@ class QFT:
         self.gen_x = gen_x
         self.gen_z = gen_z
         
+        # ====================================================================
+        # NUMERICAL BACKEND: Check if using numerical operators
+        # ====================================================================
+        self.is_numerical = isinstance(gen_x, _NumericalOperator)
+        
+        if self.is_numerical:
+            # Numerical mode - store backend and algebra, skip symbolic setup
+            self.backend = gen_x.backend
+            self.algebra = gen_x.algebra if hasattr(gen_x, 'algebra') else algebra
+            return  # Skip symbolic setup below
+        # ====================================================================
+        
+        # Symbolic mode continues below...
         # Infer algebra
         if algebra is None:
             if hasattr(gen_x, 'algebra') and gen_x.algebra is not None:
@@ -5094,6 +5126,24 @@ class QFT:
         Returns:
             Transformed operator
         """
+        # ====================================================================
+        # NUMERICAL BACKEND: Handle numerical operators
+        # ====================================================================
+        if isinstance(operator, _NumericalOperator):
+            # Apply QFT conjugation using matrices: H† A H
+            backend = operator.backend
+            H = backend.H
+            H_dag = H.conj().T
+            
+            result = _NumericalOperator(backend)
+            result._matrix = H_dag @ operator._matrix @ H
+            result.algebra = operator.algebra
+            if hasattr(operator, 'name'):
+                # Preserve name if present (though transformed operators may not have simple names)
+                pass  # Don't copy name as Z becomes X, etc.
+            return result
+        # ====================================================================
+        
         if isinstance(operator, YawOperator):
             transformed_expr = self._transform_expr(operator._expr)
             result = YawOperator(transformed_expr, self.algebra)
@@ -6103,13 +6153,17 @@ class _NumericalEigenState:
         self.observable = observable
         self.index = index
         self.backend = backend
-        self.algebra = observable.algebra
+        self.algebra = observable.algebra if hasattr(observable, 'algebra') else None
         
         # Determine which basis this eigenstate is in
-        obs_str = str(observable)
-        
-        # Handle powers: X**2 → extract X
-        base_obs = obs_str.split('**')[0].strip()
+        # Check for name attribute first (numerical operators)
+        if isinstance(observable, _NumericalOperator) and hasattr(observable, 'name'):
+            base_obs = observable.name
+        else:
+            # Fall back to string parsing
+            obs_str = str(observable)
+            # Handle powers: X**2 → extract X
+            base_obs = obs_str.split('**')[0].strip()
         
         if base_obs == 'X':
             # X eigenstate = column of Fourier matrix
@@ -6153,11 +6207,16 @@ class _NumericalProjector:
         self.observable = observable
         self.index = index
         self.backend = backend
-        self.algebra = observable.algebra
+        self.algebra = observable.algebra if hasattr(observable, 'algebra') else None
         
         # Determine which basis projector is in
-        obs_str = str(observable)
-        base_obs = obs_str.split('**')[0].strip()
+        # Check for name attribute first (numerical operators)
+        if isinstance(observable, _NumericalOperator) and hasattr(observable, 'name'):
+            base_obs = observable.name
+        else:
+            # Fall back to string parsing
+            obs_str = str(observable)
+            base_obs = obs_str.split('**')[0].strip()
         
         if base_obs == 'X':
             self._matrix = backend.projector('X', index)
@@ -6312,6 +6371,20 @@ class _NumericalOperator:
             result._matrix = np.linalg.matrix_power(self._matrix, n)
         
         return result
+    
+    def __truediv__(self, other):
+        """Divide operator by scalar."""
+        # Handle sympy expressions
+        if hasattr(other, 'evalf'):
+            other = complex(other.evalf())
+        
+        if isinstance(other, (int, float, complex)):
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix / other
+            result.algebra = self.algebra
+            return result
+        else:
+            raise NotImplementedError(f"Cannot divide by {type(other).__name__}")
     
     def adjoint(self):
         """Return adjoint (Hermitian conjugate)."""
