@@ -143,6 +143,7 @@ __all__ = [
     'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
     'QFT', 'qft', 'tensor_qft', 'proj', 'proj_general', 'ctrl', 'ctrl_spectral', 'ctrl_single',
     'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
+    'norm', 'measure',  # Fourier sampling convenience functions
     'comm', 'acomm',
     'set_auto_normalization', 'DisableNormalization',  # Performance control
     'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
@@ -5031,6 +5032,88 @@ def compose_op_branches(new_kraus_ops, state, branch_list):
     # This is more complex - may want to return list of (op, state_branch, prob)
     # For now, simpler to just use stBranches and track states
     raise NotImplementedError("Use compose_st_branches for sequential measurements")
+
+# ============================================================================
+# CONVENIENCE FUNCTIONS FOR FOURIER SAMPLING
+# ============================================================================
+
+def norm(operator_list):
+    """Normalize a sum of operators by 1/√N where N is the number of terms.
+    
+    This is a convenience function for creating uniform superpositions of
+    operator powers, commonly used in Fourier sampling algorithms.
+    
+    Args:
+        operator_list: Either a list of operators to sum, or a single operator
+        
+    Returns:
+        Normalized operator (sum divided by √N)
+        
+    Example:
+        >>> # Create oracle for period p=3 in Z_7
+        >>> alg = qudit(7)
+        >>> Z = alg.Z
+        >>> q = 7 // 3  # = 2
+        >>> oracle = norm([Z**j for j in range(0, 7, q)])
+        >>> # Returns (Z^0 + Z^2 + Z^4 + Z^6) / 2
+    """
+    from sympy import sqrt
+    
+    # If it's already a single operator (not a list), just return it
+    if not isinstance(operator_list, list):
+        return operator_list
+    
+    if len(operator_list) == 0:
+        raise ValueError("Cannot normalize empty list")
+    
+    # Sum the operators
+    result = operator_list[0]
+    for op in operator_list[1:]:
+        result = result + op
+    
+    # Divide by sqrt(N)
+    N = len(operator_list)
+    return result / sqrt(N)
+
+def measure(observable, state):
+    """Create a measurement device for an observable.
+    
+    This automatically constructs the eigenbasis of the observable and
+    returns a callable measurement device.
+    
+    Args:
+        observable: Observable to measure (e.g., X, Z, or powers thereof)
+        state: State to measure
+        
+    Returns:
+        Callable that when called returns (post_state, outcome)
+        
+    Example:
+        >>> alg = qudit(7)
+        >>> Z = alg.Z
+        >>> psi = char(Z, 0)  # |0⟩
+        >>> device = measure(Z, psi)
+        >>> post_state, outcome = device()
+        >>> # outcome will be in {0, 1, 2, 3, 4, 5, 6}
+    """
+    # Get the algebra and dimension
+    if hasattr(observable, 'algebra') and observable.algebra is not None:
+        algebra = observable.algebra
+        
+        # Get dimension from algebra
+        if hasattr(algebra, 'power_mod') and algebra.power_mod is not None:
+            d = algebra.power_mod
+        else:
+            # For qubits without explicit power_mod
+            d = 2
+    else:
+        raise ValueError("Observable must have an associated algebra")
+    
+    # Create the eigenbasis
+    basis = [proj(observable, i) for i in range(d)]
+    
+    # Return the measurement device
+    return stMeasure(basis, state)
 
 # ============================================================================
 # QUANTUM FOURIER TRANSFORM
