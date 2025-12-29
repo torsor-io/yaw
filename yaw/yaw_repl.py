@@ -747,6 +747,9 @@ class YawREPL:
         # Join all lines preserving original formatting
         full_statement = '\n'.join(self.statement_buffer)
         self.statement_buffer = []
+        
+        # Preprocess: Replace $alg = ... with alg = ... and inject I, X, Z
+        full_statement = self._preprocess_alg_assignments(full_statement)
 
         # Build namespace
         namespace = self._build_namespace()
@@ -770,6 +773,22 @@ class YawREPL:
                     except:
                         # New variable
                         self.variables.set(key, value)
+            
+            # Special handling for $alg: inject I, X, Z as globals
+            if '$alg' in namespace:
+                alg = namespace['$alg']
+                if hasattr(alg, 'I'):
+                    self.variables.set('I', alg.I)
+                if hasattr(alg, 'X') and hasattr(alg.generators, '__getitem__'):
+                    if 'X' in alg.generators:
+                        self.variables.set('X', alg.generators['X'])
+                    elif 'X' in alg.generator_names:
+                        self.variables.set('X', alg.X)
+                if hasattr(alg, 'Z') and hasattr(alg.generators, '__getitem__'):
+                    if 'Z' in alg.generators:
+                        self.variables.set('Z', alg.generators['Z'])
+                    elif 'Z' in alg.generator_names:
+                        self.variables.set('Z', alg.Z)
 
             return None  # Multi-line statements don't return values
 
@@ -795,6 +814,38 @@ class YawREPL:
             return True
         
         return name in builtins
+    
+    def _preprocess_alg_assignments(self, code):
+        """Preprocess $alg = ... assignments to inject I, X, Z.
+        
+        Replaces:
+            $alg = qudit(d)
+        With:
+            alg = qudit(d)
+            I, X, Z = alg.I, alg.X, alg.Z
+        
+        This allows the user's desired syntax to work inside functions.
+        """
+        import re
+        
+        # Pattern: $alg = ... (possibly with $some_name)
+        pattern = r'(\s*)\$(\w+)\s*=\s*(.+)'
+        
+        def replace_alg(match):
+            indent = match.group(1)
+            var_name = match.group(2)
+            rhs = match.group(3).strip()
+            
+            # Generate replacement code
+            lines = [
+                f"{indent}{var_name} = {rhs}",
+                f"{indent}I, X, Z = {var_name}.I, {var_name}.X, {var_name}.Z"
+            ]
+            return '\n'.join(lines)
+        
+        # Replace all $alg assignments
+        result = re.sub(pattern, replace_alg, code)
+        return result
     
     def _build_namespace(self):
         """Build namespace for eval/exec (extracted for reuse)."""
