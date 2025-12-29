@@ -805,6 +805,7 @@ class YawREPL:
             'OpBranches', 'opBranches', 'StBranches', 'stBranches',
             'CollapsedState', 'TransformedState', 'QFT', 'qft', 'proj',
             'compose_st_branches', 'compose_op_branches',
+            'norm', 'measure',  # Fourier sampling helpers
             'len', 'sum', 'abs', 'max', 'min', 'range', 'enumerate', 'zip',
             'I', 'Encoding', 'MixedState', 'mixed'
         }
@@ -862,6 +863,7 @@ class YawREPL:
             QFT, qft, proj, proj_algebraic,
             ctrl, ctrl_single,
             qudit, qubit,
+            norm, measure,  # Fourier sampling convenience functions
             Encoding, rep, comm, acomm, gnsVec, gnsMat, spec, minimal_poly
         )
 
@@ -934,6 +936,8 @@ class YawREPL:
         namespace['ctrl_single'] = ctrl_single
         namespace['qudit'] = qudit
         namespace['qubit'] = qudit
+        namespace['norm'] = norm  # Fourier sampling helper
+        namespace['measure'] = measure  # Fourier sampling helper
         namespace['Encoding'] = Encoding
         namespace['rep'] = rep
         namespace['comm'] = comm
