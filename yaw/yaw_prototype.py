@@ -6555,8 +6555,28 @@ class _NumericalOperator:
         
         if n == 0:
             result._matrix = np.eye(self.backend.d, dtype=complex)
-        else:
-            result._matrix = np.linalg.matrix_power(self._matrix, n)
+            return result
+        
+        # Check if algebra has power relation: X^d = I
+        if self.algebra is not None and hasattr(self.algebra, 'power_mod') and self.algebra.power_mod is not None:
+            # Reduce power modulo power_mod: X^(kd + r) = X^r
+            n_reduced = n % self.algebra.power_mod
+            
+            if n_reduced == 0:
+                # X^d = I, so return identity
+                result._matrix = np.eye(self.backend.d, dtype=complex)
+                return result
+            else:
+                # Use reduced power
+                n = n_reduced
+        
+        result._matrix = np.linalg.matrix_power(self._matrix, n)
+        
+        # Additional check: if result is numerically close to identity, return exact identity
+        # This handles floating point errors in matrix multiplication
+        identity = np.eye(self.backend.d, dtype=complex)
+        if np.allclose(result._matrix, identity, atol=1e-10):
+            result._matrix = identity
         
         return result
     
@@ -6586,6 +6606,10 @@ class _NumericalOperator:
         return _NumericalLeftMultipliedState(self, state)
     
     def __repr__(self):
+        # Check if this is the identity matrix
+        identity = np.eye(self.backend.d, dtype=complex)
+        if np.allclose(self._matrix, identity, atol=1e-10):
+            return "I"
         return f"NumericalOperator({self.backend.d}x{self.backend.d})"
 
 
