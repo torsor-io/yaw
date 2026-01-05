@@ -2984,6 +2984,98 @@ class Algebra:
 
         return expr
     
+    def _apply_rules_robust(self, expr, rules, verbose=False):
+        """Apply rewrite rules with robust matching for quantum operators.
+        
+        SymPy's .replace() doesn't work reliably with Dagger objects,
+        so we implement manual pattern matching for Mul expressions.
+        
+        Also handles powers: treats U**2 as [U, U] for pattern matching.
+        """
+        from sympy import Mul, Add, Pow
+        
+        def expand_mul_args(args):
+            """Expand powers in a list of Mul args.
+            
+            Converts [U**2, V] to [U, U, V] for pattern matching.
+            """
+            expanded = []
+            for arg in args:
+                if isinstance(arg, Pow) and arg.exp.is_integer and arg.exp > 1:
+                    # Expand U**n to [U, U, ..., U] (n times)
+                    expanded.extend([arg.base] * int(arg.exp))
+                else:
+                    expanded.append(arg)
+            return expanded
+        
+        for rule in rules:
+            if not (isinstance(rule, tuple) and len(rule) == 2):
+                continue
+                
+            pattern, replacement = rule
+            
+            # First try standard replace (works for most cases)
+            new_expr = expr.replace(pattern, replacement)
+            if new_expr != expr:
+                if verbose:
+                    print(f"  → Rule applied: {pattern} → {replacement}")
+                return new_expr
+            
+            # If that didn't work and we have a Mul, try manual matching with power expansion
+            if isinstance(expr, Mul) and isinstance(pattern, Mul):
+                # Expand powers in both expr and pattern for matching
+                expr_args = expand_mul_args(list(expr.args))
+                pattern_args = expand_mul_args(list(pattern.args))
+                
+                # Look for pattern in expr
+                for i in range(len(expr_args) - len(pattern_args) + 1):
+                    # Check if pattern matches at position i
+                    if expr_args[i:i+len(pattern_args)] == pattern_args:
+                        # Found a match! Now we need to figure out which original args to replace
+                        # This is tricky because we expanded powers
+                        
+                        # Strategy: reconstruct the expression with the matched portion replaced
+                        # We need to track back from expanded indices to original args
+                        original_expr_args = list(expr.args)
+                        
+                        # Count how many expanded items came from each original arg
+                        expanded_idx = 0
+                        start_orig_idx = None
+                        end_orig_idx = None
+                        
+                        for orig_idx, arg in enumerate(original_expr_args):
+                            arg_expanded_len = arg.exp if isinstance(arg, Pow) else 1
+                            
+                            if start_orig_idx is None and expanded_idx == i:
+                                start_orig_idx = orig_idx
+                            
+                            expanded_idx += arg_expanded_len
+                            
+                            if expanded_idx == i + len(pattern_args):
+                                end_orig_idx = orig_idx + 1
+                                break
+                        
+                        if start_orig_idx is not None and end_orig_idx is not None:
+                            # Replace original args from start_orig_idx to end_orig_idx
+                            new_args = (original_expr_args[:start_orig_idx] + 
+                                       [replacement] + 
+                                       original_expr_args[end_orig_idx:])
+                            new_expr = Mul(*new_args) if len(new_args) > 1 else (
+                                new_args[0] if new_args else replacement
+                            )
+                            if verbose:
+                                print(f"  → Rule applied (manual): {pattern} → {replacement}")
+                            return new_expr
+            
+            # Handle Add expressions recursively
+            if isinstance(expr, Add):
+                new_terms = [self._apply_rules_robust(term, [rule], verbose) 
+                            for term in expr.args]
+                if any(new_terms[i] != expr.args[i] for i in range(len(new_terms))):
+                    return Add(*new_terms)
+        
+        return expr
+    
     def normalize(self, yaw_op: YawOperator, verbose=False, force=False) -> YawOperator:
         """Apply rewrite rules until convergence.
         
@@ -3006,6 +3098,20 @@ class Algebra:
             return yaw_op  # Skip normalization for speed
         
         expr = expand(yaw_op._expr)
+        
+        # Expand operator powers so patterns like U*U† can match in U**2*U†
+        # This must happen before the normalization loop
+        def expand_operator_powers(e):
+            from sympy import Pow, Mul, Add
+            if isinstance(e, Pow) and e.exp.is_integer and e.exp > 1:
+                return Mul(*[e.base for _ in range(int(e.exp))])
+            elif isinstance(e, Mul):
+                return Mul(*[expand_operator_powers(arg) for arg in e.args])
+            elif isinstance(e, Add):
+                return Add(*[expand_operator_powers(term) for term in e.args])
+            return e
+        
+        expr = expand_operator_powers(expr)
 
         if verbose:
             print(f"\n{'='*60}")
@@ -3016,15 +3122,10 @@ class Algebra:
         for iteration in range(max_iterations):
             old_expr = expr
 
-            # Apply standard rewrite rules
-            for rule in self.rules:
-                if isinstance(rule, tuple) and len(rule) == 2:
-                    pattern, replacement = rule
-                    new_expr = expr.replace(pattern, replacement)
-                    if new_expr != expr:
-                        if verbose:
-                            print(f"  → Rule applied: {expr} ↦ {new_expr}")
-                        expr = new_expr
+            # Apply standard rewrite rules with robust matching
+            new_expr = self._apply_rules_robust(expr, self.rules, verbose)
+            if new_expr != expr:
+                expr = new_expr
 
             # Reduce higher powers
             new_expr = self._reduce_powers(expr)
