@@ -2657,7 +2657,11 @@ class Algebra:
                     rules.append((op_expr * Dagger(op_expr), sympy_I))
                     rules.append((Dagger(op_expr) * op_expr, sympy_I))
 
-            elif rel == 'anti':
+            elif rel == 'comm':
+                # Commutation: XY = YX (braiding phase = 1)
+                self.braid_phase = 1
+
+            elif rel == 'acomm' or rel == 'anti':
                 # Anticommutation: XY = -YX (special case of braid(-1))
                 self.braid_phase = -1
 
