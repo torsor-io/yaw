@@ -493,6 +493,19 @@ class YawREPL:
         """
         import re
         
+        # Preprocess subscripts first: E_{a,b} -> E[(a,b)]
+        line = self._parse_subscripts(line)
+        
+        # Try direct eval first (for simple cases with GeneratorNameHelper)
+        try:
+            namespace = self._build_namespace()
+            result = eval(line, namespace, namespace)
+            if isinstance(result, list):
+                return result
+        except:
+            pass
+        
+        # Fallback: manual parsing
         # Pattern: [expr for var in iterable]
         pattern = r'\[(.+?)\s+for\s+(\w+)\s+in\s+([^\]]+)\]'
         match = re.search(pattern, line)
@@ -1179,15 +1192,17 @@ class YawREPL:
         
         # Check if it's a comprehension (starts with '[')
         if component_str.startswith('['):
-            # It's a comprehension - evaluate it directly
-            # NOTE: Do NOT preprocess subscripts here - the comprehension
-            # will generate the proper names (e.g., f'E_{{{a},{b}}}' → 'E_{0,1}')
+            # It's a comprehension - evaluate it
             try:
+                # Preprocess subscripts: E_{a,b} → E[(a,b)]
+                # This allows natural syntax with GeneratorNameHelper
+                preprocessed = self._parse_subscripts(component_str)
+                
                 # Build namespace for evaluation
                 namespace = self._build_namespace()
                 
                 # Evaluate the comprehension
-                result = eval(component_str, namespace, namespace)
+                result = eval(preprocessed, namespace, namespace)
                 
                 # Check that result is a list
                 if not isinstance(result, list):
