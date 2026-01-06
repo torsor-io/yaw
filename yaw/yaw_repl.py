@@ -75,6 +75,45 @@ class DictVariableStore(VariableStore):
     def list_vars(self):
         return list(self._vars.keys())
 
+class GeneratorNameHelper:
+    """Helper for creating generator names with subscript syntax.
+    
+    Allows writing E_{a,b} in comprehensions which becomes E[(a,b)]
+    after preprocessing, and this class handles the subscript to generate
+    the proper name string 'E_{a,b}'.
+    
+    Example:
+        E = GeneratorNameHelper('E')
+        E[(0,1)]  # Returns 'E_{0,1}'
+        
+    This enables:
+        gens = [E[(a,b)] for a in range(3) for b in range(3)]
+    Which with preprocessing becomes:
+        gens = [E_{a,b} for a in range(3) for b in range(3)]
+    """
+    def __init__(self, base_name='E'):
+        self.base_name = base_name
+    
+    def __getitem__(self, index):
+        """Generate generator name from subscript.
+        
+        Args:
+            index: Can be a single value or tuple
+            
+        Returns:
+            String like 'E_{0,1}' or 'E_{a,b}'
+        """
+        if isinstance(index, tuple):
+            # Multiple indices: E[(a,b)] → 'E_{a,b}'
+            indices_str = ','.join(str(i) for i in index)
+            return f'{self.base_name}_{{{indices_str}}}'
+        else:
+            # Single index: E[(a,)] or E[a] → 'E_{a}'
+            return f'{self.base_name}_{{{index}}}'
+    
+    def __repr__(self):
+        return f"GeneratorNameHelper('{self.base_name}')"
+
 class YawREPL:
     """Interactive REPL for yaw quantum programming.
     
@@ -314,37 +353,24 @@ class YawREPL:
                for kw in continuation_keywords)
     
     def _parse_subscripts(self, line):
-        """Parse subscript notation: var_{expr} → var_value
+        """Parse subscript notation: var_{expr} -> var[(expr)]
         
-        Replaces expressions like P_{k} with P_0, P_1, etc.
-        by evaluating the subscript expression.
+        Transforms mathematical subscript notation into valid Python syntax.
         
-        Note: This is done BEFORE execution, so subscript expressions
-        must use already-defined variables.
+        Examples:
+            E_{0,1} -> E[(0,1)]
+            E_{a,b} -> E[(a,b)]
+            P_{k} -> P[(k)]
+        
+        This allows subscript syntax to work with:
+        - Dictionary access: E[(a,b)] where E is a dict
+        - Callable objects: E[(a,b)] where E has __getitem__
+        - Generator helpers: GeneratorNameHelper instances
         """
         import re
-        
-        # Pattern: variable_{expression}
-        pattern = r'(\w+)_{([^}]+)}'
-        
-        def replace_subscript(match):
-            var_name = match.group(1)
-            subscript_expr = match.group(2)
-            
-            try:
-                # Build namespace for evaluating subscript
-                namespace = self._build_namespace()
-                
-                # Evaluate subscript expression
-                subscript_value = eval(subscript_expr, namespace, namespace)
-                
-                # Create subscripted variable name
-                return f"{var_name}_{subscript_value}"
-            except:
-                # If evaluation fails, leave as-is
-                return match.group(0)
-        
-        return re.sub(pattern, replace_subscript, line)
+        # Pattern: word_{content}
+        # Replace: word[(content)]
+        return re.sub(r'(\w+)_{([^}]+)}', r'\1[(\2)]', line)
     
     def _parse_list_comprehension_assignment(self, line):
         """Parse list comprehension with assignment.
@@ -862,9 +888,10 @@ class YawREPL:
             CollapsedState, TransformedState,
             QFT, qft, proj, proj_algebraic,
             ctrl, ctrl_single,
-            qudit, qubit,
+            qudit, qubit, matrix_units,
             norm, measure,  # Fourier sampling convenience functions
-            Encoding, rep, comm, acomm, gnsVec, gnsMat, spec, minimal_poly
+            Encoding, rep, comm, acomm, gnsVec, gnsMat, spec, minimal_poly,
+            MixedState, mixed
         )
 
         # Add current algebra if exists
@@ -935,7 +962,8 @@ class YawREPL:
         namespace['ctrl'] = ctrl
         namespace['ctrl_single'] = ctrl_single
         namespace['qudit'] = qudit
-        namespace['qubit'] = qudit
+        namespace['qubit'] = qubit
+        namespace['matrix_units'] = matrix_units
         namespace['norm'] = norm  # Fourier sampling helper
         namespace['measure'] = measure  # Fourier sampling helper
         namespace['Encoding'] = Encoding
@@ -948,6 +976,14 @@ class YawREPL:
         namespace['minimal_poly'] = minimal_poly
         namespace['MixedState'] = MixedState
         namespace['mixed'] = mixed
+        
+        # Generator name helpers for comprehensions
+        # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
+        # which with preprocessing becomes: gens = [E_{a,b} for ...]
+        namespace['E'] = GeneratorNameHelper('E')
+        namespace['F'] = GeneratorNameHelper('F')
+        namespace['G'] = GeneratorNameHelper('G')
+        namespace['H'] = GeneratorNameHelper('H')
 
         return namespace
     
@@ -1125,6 +1161,47 @@ class YawREPL:
 
         return result
     
+    def _parse_algebra_component(self, component_str, component_type):
+        """Parse a component of algebra spec (generators or relations).
+        
+        Supports two formats:
+            1. Comma-separated list: "X, Z, W"
+            2. List comprehension: "[f'E_{{{a},{b}}}' for a in range(3) for b in range(3)]"
+        
+        Args:
+            component_str: String to parse
+            component_type: "generators" or "relations" (for error messages)
+            
+        Returns:
+            List of strings, or error message string
+        """
+        component_str = component_str.strip()
+        
+        # Check if it's a comprehension (starts with '[')
+        if component_str.startswith('['):
+            # It's a comprehension - evaluate it directly
+            # NOTE: Do NOT preprocess subscripts here - the comprehension
+            # will generate the proper names (e.g., f'E_{{{a},{b}}}' → 'E_{0,1}')
+            try:
+                # Build namespace for evaluation
+                namespace = self._build_namespace()
+                
+                # Evaluate the comprehension
+                result = eval(component_str, namespace, namespace)
+                
+                # Check that result is a list
+                if not isinstance(result, list):
+                    return f"Error: {component_type} comprehension must evaluate to a list, got {type(result).__name__}"
+                
+                # Convert all elements to strings
+                return [str(item) for item in result]
+                
+            except Exception as e:
+                return f"Error evaluating {component_type} comprehension: {e}"
+        else:
+            # Traditional comma-separated list
+            return [g.strip() for g in component_str.split(',')]
+    
     def _define_algebra(self, line):
         """Parse and define algebra from line like: $alg = <X, Z | herm, unit, anti>"""
         try:
@@ -1141,12 +1218,18 @@ class YawREPL:
                 return "Error: Algebra must have format <gens | rels>"
 
             gens_part, rels_part = spec.split('|', 1)
+            gens_part = gens_part.strip()
+            rels_part = rels_part.strip()
 
-            # Parse generators
-            gens = [g.strip() for g in gens_part.split(',')]
-
-            # Parse relations
-            rels = [r.strip() for r in rels_part.split(',')]
+            # FEATURE 2: Parse generators (support comprehensions)
+            gens = self._parse_algebra_component(gens_part, "generators")
+            if isinstance(gens, str) and gens.startswith("Error"):
+                return gens
+            
+            # FEATURE 2: Parse relations (support comprehensions)
+            rels = self._parse_algebra_component(rels_part, "relations")
+            if isinstance(rels, str) and rels.startswith("Error"):
+                return rels
 
             # Create algebra
             self.algebra = Algebra(gens, rels)
@@ -1229,6 +1312,9 @@ class YawREPL:
     def _eval_expr(self, expr):
         """Evaluate expression with current context."""
         try:
+            # FEATURE 1: Preprocess subscript notation
+            expr = self._parse_subscripts(expr)
+            
             # Special case: Direct variable lookup for $ and _ prefixed names
             expr_stripped = expr.strip()
             if expr_stripped.startswith('$') or expr_stripped.startswith('_'):

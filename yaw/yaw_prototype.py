@@ -133,7 +133,7 @@ def _numerical_algebra_ops(algebra):
 
 __version__ = "0.1.1"
 __all__ = [
-    'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit',
+    'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit', 'qubit', 'matrix_units',
     'State', 'EigenState', 'TensorState', 'ConjugatedState', 
     'TransformedState', 'CollapsedState', 'TensorSum', 'SuperpositionState',
     'OpChannel', 'opChannel', 'StChannel', 'stChannel',
@@ -2626,6 +2626,90 @@ class Algebra:
             return self.generators[name]
         raise AttributeError(f"Generator {name} not in algebra")
     
+    def __getitem__(self, name):
+        """Allow dictionary-style access: algebra['E_{0,1}']"""
+        if name in self.generators:
+            return self.generators[name]
+        raise KeyError(f"Generator {name} not in algebra")
+    
+    def _parse_relation_expr(self, expr_str, sympy_gens, sympy_I):
+        """Parse a relation expression string to SymPy expression.
+        
+        Handles:
+        - Generator names: E_{0,1} or X
+        - Dagger: .d or †
+        - Operations: *, +, -, **
+        - Identity: I
+        - Parentheses
+        
+        Args:
+            expr_str: Expression string like "E_{0,1}.d" or "X*Y"
+            sympy_gens: Dict of generator name -> SymPy operator
+            sympy_I: Identity operator
+            
+        Returns:
+            SymPy expression or None if parsing fails
+        """
+        import re
+        from sympy import sympify
+        from sympy.physics.quantum import Operator, Dagger
+        
+        # Preprocess: Replace .d with † if not already there
+        expr_str = expr_str.replace('.d', '†')
+        
+        # Build namespace for sympify
+        namespace = {}
+        
+        # Strategy: Replace generator names (including subscripts) with temp valid Python identifiers
+        # Then sympify, then the temp identifiers will map to the actual SymPy operators
+        
+        # Create mapping: original name -> temp name
+        temp_mapping = {}
+        temp_counter = 0
+        
+        # Sort generators by length (longest first) to avoid partial matches
+        sorted_gens = sorted(sympy_gens.keys(), key=len, reverse=True)
+        
+        processed_expr = expr_str
+        
+        for gen_name in sorted_gens:
+            if gen_name in processed_expr:
+                # Create temp name
+                temp_name = f'_GEN{temp_counter}_'
+                temp_mapping[gen_name] = temp_name
+                namespace[temp_name] = sympy_gens[gen_name]
+                
+                # Replace in expression
+                processed_expr = processed_expr.replace(gen_name, temp_name)
+                temp_counter += 1
+        
+        # Add identity
+        namespace['I'] = sympy_I
+        
+        # Add Dagger function
+        namespace['Dagger'] = Dagger
+        
+        # Try to parse daggers properly
+        # Pattern: temp_name followed by †
+        def replace_dagger(match):
+            op_name = match.group(1)
+            return f'Dagger({op_name})'
+        
+        processed_expr = re.sub(r'(_GEN\d+_)\s*†', replace_dagger, processed_expr)
+        
+        # Also handle remaining † symbols
+        if '†' in processed_expr:
+            # Try to find what comes before †
+            processed_expr = re.sub(r'([A-Za-z_]\w*)\s*†', replace_dagger, processed_expr)
+        
+        # Now sympify
+        try:
+            result = sympify(processed_expr, locals=namespace)
+            return result
+        except Exception as e:
+            print(f"Debug: Could not parse '{expr_str}' (processed: '{processed_expr}'): {e}")
+            return None
+    
     def _compile_relations(self, rels: List[str]) -> List[Tuple]:
         """Convert relation specifiers to SymPy rewrite rules."""
         import re
@@ -2693,6 +2777,23 @@ class Algebra:
                     self.power_mod = n  # *** Store the modulus ***
                     for name, op_expr in sympy_gens.items():
                         rules.append((op_expr**n, sympy_I))
+            
+            elif '=' in rel:
+                # Equation relation: lhs = rhs
+                # Example: "E_{0,1}.d = E_{1,0}" or "X*Y = Y*X"
+                try:
+                    lhs_str, rhs_str = rel.split('=', 1)
+                    lhs_str = lhs_str.strip()
+                    rhs_str = rhs_str.strip()
+                    
+                    # Parse both sides as symbolic expressions
+                    lhs_expr = self._parse_relation_expr(lhs_str, sympy_gens, sympy_I)
+                    rhs_expr = self._parse_relation_expr(rhs_str, sympy_gens, sympy_I)
+                    
+                    if lhs_expr is not None and rhs_expr is not None:
+                        rules.append((lhs_expr, rhs_expr))
+                except Exception as e:
+                    print(f"Warning: Could not parse equation relation '{rel}': {e}")
 
         # Derive pow(2) from herm + unit
         has_explicit_pow = any(rel.startswith('pow(') for rel in rels)
@@ -3253,6 +3354,59 @@ def qudit(d = 2):
 
 def qubit():
     return qudit(2)
+
+def matrix_units(d):
+    """Create algebra of d×d matrix units E_{a,b} = |a⟩⟨b|.
+    
+    Matrix units satisfy:
+    - E_{a,b}† = E_{b,a}  (Hermiticity relation)
+    - E_{a,b} · E_{c,d} = δ_{bc} E_{a,d}  (Multiplication rule)
+    - Σ_a E_{a,a} = I  (Completeness)
+    
+    These form a basis for M_d(ℂ), the algebra of d×d complex matrices.
+    
+    Args:
+        d: Dimension of the Hilbert space
+        
+    Returns:
+        Algebra with generators E_{a,b} for all 0 ≤ a,b < d
+        
+    Example:
+        >>> alg = matrix_units(3)
+        >>> E_01 = alg['E_{0,1}']  # Access by name
+        >>> E_10 = E_01.d           # E_{0,1}† = E_{1,0}
+        >>> result = E_01 * E_10    # E_{0,1} · E_{1,0} = E_{0,0}
+    """
+    # Generate all E_{a,b} names
+    gen_names = [f'E_{{{a},{b}}}' for a in range(d) for b in range(d)]
+    
+    # Create algebra (empty relations - we'll enforce them numerically)
+    alg = Algebra(gen_names, [])
+    
+    # Get numerical backend
+    backend = _get_qudit_backend(d)
+    
+    # Create identity
+    I_num = _NumericalOperator(backend)
+    I_num._matrix = np.eye(d, dtype=complex)
+    I_num.algebra = alg
+    alg.I = I_num
+    
+    # Create matrix units as numerical operators
+    for a in range(d):
+        for b in range(d):
+            name = f'E_{{{a},{b}}}'
+            
+            # Create the matrix unit |a⟩⟨b|
+            mat = np.zeros((d, d), dtype=complex)
+            mat[a, b] = 1.0
+            
+            num_op = _NumericalOperator(backend)
+            num_op._matrix = mat
+            num_op.algebra = alg
+            alg.generators[name] = num_op
+    
+    return alg
     
 # ============================================================================
 # STATES
@@ -6600,6 +6754,14 @@ class _NumericalOperator:
         result._matrix = self._matrix.conj().T
         result.algebra = self.algebra
         return result
+    
+    @property
+    def d(self):
+        """Shorthand for adjoint: A.d == A.adjoint()
+        
+        This matches the YawOperator interface.
+        """
+        return self.adjoint()
     
     def __lshift__(self, state):
         """Apply to state: state << operator means operator|state⟩."""
