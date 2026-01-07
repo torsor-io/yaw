@@ -6959,7 +6959,11 @@ def _get_operator_basis(algebra):
             else:
                 op = (X ** a) * (Z ** b)
             
-            basis.append(op.normalize())
+            # Normalize if symbolic, otherwise use as-is (for numerical)
+            if hasattr(op, 'normalize'):
+                basis.append(op.normalize())
+            else:
+                basis.append(op)
     
     return basis
 
@@ -7445,8 +7449,12 @@ def spec(op, state=None, tolerance=1e-10):
         # to avoid circular dependency
         state = _create_bootstrap_eigenstate(first_gen, 0, algebra)
     
-    # Convert operator to matrix using GNS construction
-    M = gnsMat(state, op)
+    # Fast path for numerical operators - use matrix directly
+    if hasattr(op, '_matrix') and op._matrix is not None:
+        M = op._matrix
+    else:
+        # Convert operator to matrix using GNS construction
+        M = gnsMat(state, op)
     
     # Compute eigenvalues
     eigenvalues = np.linalg.eigvals(M)
