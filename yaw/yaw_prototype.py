@@ -6932,40 +6932,69 @@ def _get_operator_basis(algebra):
     Returns:
         List of YawOperator instances forming a basis
     """
-    if not hasattr(algebra, 'power_mod'):
-        raise ValueError("Algebra must have power_mod attribute")
+    if not hasattr(algebra, 'power_mod') or algebra.power_mod is None:
+        raise ValueError("Algebra must be finite-dimensional (needs power_mod)")
     
     d = algebra.power_mod
-    dim = d * d  # Dimension of operator space
     
-    # Get generators
-    if not hasattr(algebra, 'X') or not hasattr(algebra, 'Z'):
-        raise ValueError("Algebra must have X and Z generators")
+    # Case 1: Weyl algebra structure (X, Z generators)
+    if hasattr(algebra, 'X') and hasattr(algebra, 'Z'):
+        X = algebra.X
+        Z = algebra.Z
+        I = algebra.I
+        
+        # Build basis by enumerating X^a Z^b for a,b < d
+        basis = []
+        for b in range(d):  # Z power
+            for a in range(d):  # X power
+                if a == 0 and b == 0:
+                    op = I
+                elif a == 0:
+                    op = Z ** b
+                elif b == 0:
+                    op = X ** a
+                else:
+                    op = (X ** a) * (Z ** b)
+                
+                # Normalize if symbolic, otherwise use as-is (for numerical)
+                if hasattr(op, 'normalize'):
+                    basis.append(op.normalize())
+                else:
+                    basis.append(op)
+        
+        return basis
     
-    X = algebra.X
-    Z = algebra.Z
-    I = algebra.I
-    
-    # Build basis by enumerating X^a Z^b for a,b < d
-    basis = []
-    for b in range(d):  # Z power
-        for a in range(d):  # X power
-            if a == 0 and b == 0:
-                op = I
-            elif a == 0:
-                op = Z ** b
-            elif b == 0:
-                op = X ** a
-            else:
-                op = (X ** a) * (Z ** b)
-            
-            # Normalize if symbolic, otherwise use as-is (for numerical)
+    # Case 2: Single generator algebra (e.g., <U | unit, pow(d)>)
+    elif len(algebra.generator_names) == 1:
+        gen_name = algebra.generator_names[0]
+        if gen_name == 'I':
+            # Trivial algebra - just identity
+            return [algebra.I]
+        
+        gen = algebra.generators[gen_name]
+        I = algebra.I
+        
+        # Build basis {I, U, U^2, ..., U^(d-1)}
+        basis = [I]
+        for k in range(1, d):
+            op = gen ** k
             if hasattr(op, 'normalize'):
                 basis.append(op.normalize())
             else:
                 basis.append(op)
+        
+        return basis
     
-    return basis
+    # Case 3: General algebra - use all monomials up to degree d-1
+    else:
+        # This is more complex - for now, raise an error
+        raise ValueError(
+            f"Cannot construct basis for algebra with generators {algebra.generator_names}.\n"
+            f"Currently supported:\n"
+            f"  - Weyl algebras with X, Z generators\n"
+            f"  - Single generator algebras"
+        )
+
 
 def _compute_gram_matrix(state, basis):
     """Compute Gram matrix G[i,j] = <B_i, B_j> = state.expect(B_i† B_j).
@@ -7371,6 +7400,53 @@ def _create_bootstrap_eigenstate(observable, index, algebra):
     state.eigenvalue = 1.0 if index == 0 else -1.0
     return state
 
+def _find_minimal_poly_symbolic(op, max_degree=20):
+    """Try to find minimal polynomial of operator symbolically.
+    
+    Tests operator powers to find p(op) = 0.
+    
+    Args:
+        op: YawOperator
+        max_degree: Maximum degree to test
+        
+    Returns:
+        SymPy Poly or None if not found
+    """
+    from sympy import symbols, Poly
+    
+    algebra = op.algebra
+    x = symbols('x')
+    
+    # Get the identity
+    I = algebra.I
+    
+    # Try powers up to max_degree
+    powers = [I]  # op^0 = I
+    current = op
+    
+    for k in range(1, min(max_degree + 1, algebra.power_mod + 1 if algebra.power_mod else max_degree + 1)):
+        normalized = ~current if hasattr(current, 'normalize') else current
+        powers.append(normalized)
+        
+        # Check if this power can be expressed as combination of identity
+        power_str = str(normalized)
+        
+        # Check for simple patterns
+        if power_str == 'I':
+            # Found op^k = I, so minimal poly divides x^k - 1
+            return Poly(x**k - 1, x)
+        elif power_str == '-I':
+            # Found op^k = -I, so minimal poly divides x^k + 1  
+            return Poly(x**k + 1, x)
+        elif k >= 2 and power_str == str(powers[k-2]):
+            # Found op^k = op^(k-2), means op^2 = I
+            return Poly(x**2 - 1, x)
+        
+        if k < max_degree:
+            current = current * op
+    
+    return None
+
 def spec(op, state=None, tolerance=1e-10):
     """Compute spectrum (eigenvalues) of an operator in descending order.
     
@@ -7413,6 +7489,55 @@ def spec(op, state=None, tolerance=1e-10):
         raise ValueError("Operator must have an associated algebra")
     
     algebra = op.algebra
+    
+    # Check if algebra is finite-dimensional
+    if not hasattr(algebra, 'power_mod') or algebra.power_mod is None:
+        raise ValueError(
+            "spec() only supports finite-dimensional algebras.\n"
+            "Your algebra needs a power relation like pow(d) to be finite-dimensional.\n"
+            "Example: $alg = <U | unit, pow(2)> creates a finite (qubit-like) algebra."
+        )
+    
+    # ALGEBRAIC SPECTRUM COMPUTATION:
+    # For finite-dimensional symbolic algebras, compute spectrum by solving minimal polynomial
+    
+    # Check if operator is symbolic (not numerical)
+    is_symbolic = not (hasattr(op, '_matrix') and op._matrix is not None)
+    
+    if is_symbolic:
+        try:
+            # Try to find minimal polynomial symbolically
+            min_poly = _find_minimal_poly_symbolic(op, max_degree=algebra.power_mod)
+            
+            if min_poly is not None:
+                # Solve the polynomial to get eigenvalues
+                from sympy import solve, I as sympy_I
+                from sympy.abc import x
+                
+                # Get roots
+                eigenvalues_symbolic = solve(min_poly, x)
+                
+                # Convert to numerical values
+                eigenvalues = []
+                for ev_sym in eigenvalues_symbolic:
+                    # Evaluate to complex number
+                    ev_complex = complex(ev_sym.evalf())
+                    eigenvalues.append(_clean_number(ev_complex))
+                
+                # Sort in descending order
+                eigenvalues_sorted = sorted(
+                    eigenvalues,
+                    key=lambda x: (-x.real, -x.imag)
+                )
+                
+                return eigenvalues_sorted
+                
+        except Exception as e:
+            # If algebraic method fails, fall through to matrix method
+            pass
+    
+    # MATRIX-BASED SPECTRUM COMPUTATION:
+    # For numerical operators or when algebraic method fails
     
     # If no state provided, create a default one
     if state is None:
