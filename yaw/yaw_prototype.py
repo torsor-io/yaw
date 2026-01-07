@@ -7015,7 +7015,11 @@ def _compute_gram_matrix(state, basis):
             # For Pauli operators, B_i† = B_i (they're Hermitian)
             # More generally, we need adjoint
             B_i_dag = basis[i].adjoint()
-            product = (B_i_dag * basis[j]).normalize()
+            product = B_i_dag * basis[j]
+            
+            # Normalize if symbolic
+            if hasattr(product, 'normalize'):
+                product = product.normalize()
             
             # Compute expectation value
             expectation = state.expect(product)
@@ -7091,7 +7095,11 @@ def _orthonormalize_basis(basis, gram_matrix, threshold=1e-10):
                     op = op + term
         
         if op is not None:
-            orthonormal_basis.append(op.normalize())
+            # Normalize if symbolic
+            if hasattr(op, 'normalize'):
+                orthonormal_basis.append(op.normalize())
+            else:
+                orthonormal_basis.append(op)
     
     # Convert coefficients to matrix
     if coefficients:
@@ -7176,12 +7184,19 @@ def gnsVec(state, op):
         return np.array([])
     
     alpha = np.zeros(len(ortho_basis), dtype=complex)
-    op_normalized = op.normalize()
+    # Normalize if symbolic, otherwise use as-is (for numerical)
+    if hasattr(op, 'normalize'):
+        op_normalized = op.normalize()
+    else:
+        op_normalized = op
     
     for i, e_i in enumerate(ortho_basis):
         # Compute inner product ⟨e_i, op⟩ = state.expect(e_i† * op)
         e_i_dag = e_i.adjoint()
-        product = (e_i_dag * op_normalized).normalize()
+        product = e_i_dag * op_normalized
+        
+        # Normalize if symbolic
+        if hasattr(product, 'normalize'):
         
         # Compute expectation value
         expectation = state.expect(product)
@@ -7278,7 +7293,11 @@ def gnsMat(state, op):
         e_i_dag = ortho_basis[i].adjoint()
         for j in range(n):
             # Compute e_i† O e_j
-            product = (e_i_dag * op * ortho_basis[j]).normalize()
+            product = e_i_dag * op * ortho_basis[j]
+            
+            # Normalize if symbolic
+            if hasattr(product, 'normalize'):
+                product = product.normalize()
             
             # Compute expectation value
             expectation = state.expect(product)
@@ -7308,7 +7327,11 @@ def _express_in_basis(op, basis, algebra):
     from sympy.core.numbers import Number as SympyNumber
     
     # Normalize operator
-    op_norm = op.normalize()
+    # Normalize if symbolic
+    if hasattr(op, 'normalize'):
+        op_norm = op.normalize()
+    else:
+        op_norm = op
     op_expr = op_norm._expr
     
     # Initialize coefficients
