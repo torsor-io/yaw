@@ -112,7 +112,7 @@ class Gen:
             return f'{self.base_name}_{{{index}}}'
     
     def __repr__(self):
-        return f"GeneratorNameHelper('{self.base_name}')"
+        return f"Gen('{self.base_name}')"
 
 class YawREPL:
     """Interactive REPL for yaw quantum programming.
@@ -365,7 +365,7 @@ class YawREPL:
         This allows subscript syntax to work with:
         - Dictionary access: E[(a,b)] where E is a dict
         - Callable objects: E[(a,b)] where E has __getitem__
-        - Generator helpers: GeneratorNameHelper instances
+        - Generator helpers: Gen instances
         """
         import re
         # Pattern: word_{content}
@@ -993,10 +993,10 @@ class YawREPL:
         # Generator name helpers for comprehensions
         # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
         # which with preprocessing becomes: gens = [E_{a,b} for ...]
-        namespace['E'] = GeneratorNameHelper('E')
-        namespace['F'] = GeneratorNameHelper('F')
-        namespace['G'] = GeneratorNameHelper('G')
-        namespace['H'] = GeneratorNameHelper('H')
+        namespace['E'] = Gen('E')
+        namespace['F'] = Gen('F')
+        namespace['G'] = Gen('G')
+        namespace['H'] = Gen('H')
 
         return namespace
     
@@ -1195,7 +1195,7 @@ class YawREPL:
             # It's a comprehension - evaluate it
             try:
                 # Preprocess subscripts: E_{a,b} → E[(a,b)]
-                # This allows natural syntax with GeneratorNameHelper
+                # This allows natural syntax with Gen
                 preprocessed = self._parse_subscripts(component_str)
                 
                 # Build namespace for evaluation
