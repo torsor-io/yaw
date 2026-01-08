@@ -996,7 +996,6 @@ class YawREPL:
         namespace['E'] = GenFam('E')
         namespace['F'] = GenFam('F')
         namespace['G'] = GenFam('G')
-        namespace['H'] = GenFam('H')
 
         return namespace
     
