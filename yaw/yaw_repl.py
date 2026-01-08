@@ -75,7 +75,7 @@ class DictVariableStore(VariableStore):
     def list_vars(self):
         return list(self._vars.keys())
 
-class Gen:
+class GenFam:
     """Helper for creating generator names with subscript syntax.
     
     Allows writing E_{a,b} in comprehensions which becomes E[(a,b)]

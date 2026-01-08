@@ -7197,6 +7197,7 @@ def gnsVec(state, op):
         
         # Normalize if symbolic
         if hasattr(product, 'normalize'):
+            product = product.normalize()
         
         # Compute expectation value
         expectation = state.expect(product)
