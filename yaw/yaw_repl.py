@@ -970,6 +970,7 @@ class YawREPL:
         namespace['stBranches'] = stBranches
         namespace['QFT'] = QFT
         namespace['qft'] = qft
+        namespace['tensor_qft'] = tensor_qft
         namespace['proj'] = proj
         namespace['proj_algebraic'] = proj_algebraic
         namespace['ctrl'] = ctrl
@@ -1085,6 +1086,7 @@ class YawREPL:
         namespace['compose_op_branches'] = compose_op_branches
         namespace['QFT'] = QFT
         namespace['qft'] = qft
+        namespace['tensor_qft'] = tensor_qft
         namespace['proj'] = proj
         namespace['ctrl'] = ctrl
         namespace['ctrl_single'] = ctrl_single
@@ -1160,6 +1162,7 @@ class YawREPL:
         namespace['compose_op_branches'] = compose_op_branches
         namespace['QFT'] = QFT
         namespace['qft'] = qft
+        namespace['tensor_qft'] = tensor_qft
         namespace['proj'] = proj
         namespace['ctrl'] = ctrl
         namespace['ctrl_single'] = ctrl_single
@@ -1426,6 +1429,7 @@ class YawREPL:
             namespace['compose_op_branches'] = compose_op_branches
             namespace['QFT'] = QFT
             namespace['qft'] = qft
+            namespace['tensor_qft'] = tensor_qft
             namespace['proj'] = proj
 
             
@@ -1484,7 +1488,7 @@ class YawREPL:
             'opUpdate', 'stUpdate', 'TransformedState',
             'OpMeasurement', 'opMeasure', 'StMeasurement', 'stMeasure',
             'CollapsedState', 'OpBranches', 'opBranches', 'StBranches', 'stBranches',
-            'compose_st_branches', 'compose_op_branches', 'QFT', 'qft',
+            'compose_st_branches', 'compose_op_branches', 'QFT', 'qft', 'tensor_qft',
             'proj', 'ctrl', 'ctrl_single', 'type', 'list', 'dict', 'set',
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
             'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed'
