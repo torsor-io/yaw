@@ -1177,6 +1177,14 @@ class YawOperator:
             return YawOperator(self._expr + other, self.algebra)
 
     def __radd__(self, other):
+        """Right addition: other + self.
+        
+        Handles the case where other=0 to support Python's sum() function,
+        which starts with 0 as the initial value.
+        """
+        # Handle sum() which starts with 0
+        if other == 0:
+            return self
         return YawOperator(other + self._expr, self.algebra)
 
     def __sub__(self, other):
@@ -1623,7 +1631,14 @@ class TensorSum:
             raise TypeError(f"Cannot add TensorSum with {type(other)}")
     
     def __radd__(self, other):
-        """Right addition."""
+        """Right addition.
+        
+        Handles the case where other=0 to support Python's sum() function,
+        which starts with 0 as the initial value.
+        """
+        # Handle sum() which starts with 0
+        if other == 0:
+            return self
         if isinstance(other, (TensorProduct, YawOperator)):
             return TensorSum([other] + self.terms, _skip_normalize=True)
         else:
@@ -2230,7 +2245,14 @@ class TensorProduct:
             raise TypeError(f"Cannot add TensorProduct with {type(other)}")
     
     def __radd__(self, other):
-        """Right addition."""
+        """Right addition.
+        
+        Handles the case where other=0 to support Python's sum() function,
+        which starts with 0 as the initial value.
+        """
+        # Handle sum() which starts with 0
+        if other == 0:
+            return self
         if isinstance(other, (YawOperator, TensorProduct)):
             return TensorSum([other, self])
         elif isinstance(other, TensorSum):
