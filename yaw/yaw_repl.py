@@ -653,6 +653,9 @@ class YawREPL:
 
                         # Check if result is an Algebra
                         if isinstance(result, Algebra):
+                            # Set the algebra's name for display purposes
+                            result.name = var_name
+                            
                             self.variables.set(f'${var_name}', result)
 
                             # Set as current algebra
@@ -1250,6 +1253,7 @@ class YawREPL:
 
             # Create algebra
             self.algebra = Algebra(gens, rels)
+            self.algebra.name = '$alg'  # Set name for display purposes
 
             # Store generators in variable space
             for name in gens:
@@ -1309,6 +1313,9 @@ class YawREPL:
 
                 # Store each variable
                 for name, value in zip(names, result):
+                    # If assigning an Algebra, set its name for display purposes
+                    if isinstance(value, Algebra):
+                        value.name = name
                     self.variables.set(name, value)
 
                 # Return None to suppress output (like Python REPL)
@@ -1317,6 +1324,10 @@ class YawREPL:
                 # Simple assignment: a = x
                 name = name_part
 
+                # If assigning an Algebra, set its name for display purposes
+                if isinstance(result, Algebra):
+                    result.name = name
+                
                 # Store in variables
                 self.variables.set(name, result)
 
@@ -1469,11 +1480,24 @@ class YawREPL:
 
         Captures uppercase single letters and multi-char identifiers that
         look like operators (not functions like sqrt, char, etc.)
+        
+        IMPORTANT: Excludes identifiers that appear after a dot (attribute access),
+        since those are being accessed from an object, not as bare operators.
 
         Returns:
             Set of generator names found in the string
         """
         import re
+
+        # First, find all attribute access patterns and mark those identifiers
+        # Pattern: something.identifier (we want to exclude the identifier part)
+        attr_access_pattern = r'\.([A-Za-z_][A-Za-z0-9_]*)'
+        attr_accessed = set(re.findall(attr_access_pattern, expr_str))
+        
+        # Also find identifiers that are followed by a dot (these are objects, not operators)
+        # Pattern: identifier.something (we want to exclude the identifier part too)
+        object_pattern = r'\b([A-Za-z_][A-Za-z0-9_]*)\.'
+        objects_with_attrs = set(re.findall(object_pattern, expr_str))
 
         # Find all identifiers (sequences of letters, digits, underscores)
         identifiers = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', expr_str)
@@ -1502,6 +1526,14 @@ class YawREPL:
 
             # Skip $ and _ prefixed (those are context variables)
             if name.startswith('_') or name.startswith('$'):
+                continue
+            
+            # Skip identifiers accessed as attributes (e.g., X in alg1.X)
+            if name in attr_accessed:
+                continue
+            
+            # Skip objects that have attribute access (e.g., alg1 in alg1.X)
+            if name in objects_with_attrs:
                 continue
 
             # Skip lowercase function-like names (heuristic: likely functions)
