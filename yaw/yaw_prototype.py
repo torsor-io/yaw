@@ -1408,6 +1408,31 @@ class YawOperator:
         
         return s
     
+    def qualified_str(self):
+        """String representation with algebra prefix when available.
+        
+        Returns strings like 'alg1.X' when the algebra has a name set,
+        otherwise falls back to the standard representation.
+        
+        This is useful in tensor products where operators from different
+        algebras need to be distinguished.
+        
+        Example:
+            >>> alg1 = qudit(3)
+            >>> alg1.name = 'alg1'
+            >>> alg1.X.qualified_str()  # Returns 'alg1.X'
+        """
+        base_str = str(self)  # Use regular __str__
+        
+        # Check if this is a simple generator and algebra has a name
+        if self.algebra and hasattr(self.algebra, 'name') and self.algebra.name:
+            # Check if this is a simple generator (single letter like X, Z, I)
+            expr_str = str(self._expr)
+            if expr_str in self.algebra.generator_names or expr_str == 'I':
+                return f"{self.algebra.name}.{base_str}"
+        
+        return base_str
+    
     def __repr__(self):
         return f"YawOp({self._expr})"
     
@@ -2565,7 +2590,28 @@ class TensorProduct:
         return self * (-1)
     
     def __str__(self):
-        factor_strs = [str(f) for f in self.factors]
+        """String representation of tensor product.
+        
+        When factors come from different named algebras, uses qualified names
+        like 'alg1.X @ alg2.X' for clarity. Otherwise uses simple names.
+        """
+        # Check if any factors have named algebras
+        named_algebras = set()
+        for f in self.factors:
+            if isinstance(f, YawOperator) and hasattr(f, 'algebra') and f.algebra:
+                if hasattr(f.algebra, 'name') and f.algebra.name:
+                    named_algebras.add(f.algebra.name)
+        
+        # If we have multiple named algebras, use qualified names
+        use_qualified = len(named_algebras) > 1
+        
+        factor_strs = []
+        for f in self.factors:
+            if use_qualified and isinstance(f, YawOperator) and hasattr(f, 'qualified_str'):
+                factor_strs.append(f.qualified_str())
+            else:
+                factor_strs.append(str(f))
+        
         return " @ ".join(factor_strs)
     
     def __repr__(self):
@@ -2594,15 +2640,17 @@ class Algebra:
         I: Identity operator
     """
     
-    def __init__(self, gens: List[str], rels: List[str]):
+    def __init__(self, gens: List[str], rels: List[str], name: str = None):
         """Create algebra from generators and relations.
         
         Args:
             gens: List of generator names (e.g., ['X', 'Z'])
             rels: List of relation specifiers (e.g., ['herm', 'unit', 'anti'])
+            name: Optional name for the algebra (used in display, e.g., 'alg1')
         """
         self.generator_names = gens
         self.relation_specs = rels
+        self.name = name  # For display purposes (e.g., 'alg1' so we can show alg1.X)
         
         # Normalization cache for memoization
         # Maps (expr_str, force) -> normalized YawOperator
@@ -2610,9 +2658,9 @@ class Algebra:
         
         # Create SymPy operators
         self.generators = {}
-        for name in gens:
-            sympy_op = Operator(name)
-            self.generators[name] = YawOperator(sympy_op, self)
+        for gen_name in gens:
+            sympy_op = Operator(gen_name)
+            self.generators[gen_name] = YawOperator(sympy_op, self)
         
         # Identity operator
         self.I = YawOperator(Operator('I'), self)
