@@ -362,8 +362,8 @@ class Encoding:
     Example:
         >>> # 3-qubit repetition code
         >>> code = rep(3)
-        >>> X_L | code  # Returns X ⊗ X ⊗ X
-        >>> (X + Z) | code  # Returns (X⊗X⊗X) + (Z⊗Z⊗Z)
+        >>> X_L | code  # Returns X âŠ— X âŠ— X
+        >>> (X + Z) | code  # Returns (XâŠ—XâŠ—X) + (ZâŠ—ZâŠ—Z)
     """
     
     def __init__(self, logical_algebra, physical_algebra, generator_map):
@@ -6209,30 +6209,25 @@ class Projector(YawOperator):
     def __rmul__(self, other):
         """Right multiplication: other * proj
         
-        Preserves Projector type when possible.
+        For non-scalar operators, expands projector to algebraic form first
+        to ensure correct multiplication algebra.
         """
         # Handle plain Python scalars
         if isinstance(other, (int, float, complex)):
-            # Scalar multiplication - fall back to YawOperator
-            from sympy import sympify
-            return YawOperator(sympify(other) * self._expr, self._algebra)
+            # Scalar multiplication - scale the expanded form
+            return other * self.expand()
         
         # If multiplying by identity, return self
         if hasattr(other, '_expr') and (str(other._expr) == 'I' or other._expr == 1):
             return self
         
-        # If multiplying by a symbolic scalar, return scaled projector
+        # If multiplying by a symbolic scalar, scale the expanded form
         if hasattr(other, '_expr') and other._expr.is_number:
-            # For now, fall back to YawOperator for scaled projectors
-            return YawOperator(other._expr * self._expr, self._algebra)
+            return other * self.expand()
         
-        # Otherwise fall back to standard multiplication
-        if hasattr(other, '_expr'):
-            return YawOperator(other._expr * self._expr, self._algebra)
-        else:
-            # Unknown type - try converting to YawOperator
-            from sympy import sympify
-            return YawOperator(sympify(other) * self._expr, self._algebra)
+        # For non-scalar operators, expand to algebraic form first
+        # This ensures proper multiplication algebra
+        return other * self.expand()
     
     def __mul__(self, other):
         """Projector multiplication.
@@ -6260,8 +6255,9 @@ class Projector(YawOperator):
                 # Expand both to algebraic form and multiply
                 return self.expand() * other.expand()
         else:
-            # Fall back to default YawOperator multiplication
-            return super().__mul__(other)
+            # For non-Projector operators, expand to algebraic form first
+            # This ensures proper multiplication algebra (e.g., P*X*P = 0 for X flipping basis)
+            return self.expand() * other
     
     def __pow__(self, exponent):
         """Projector powers: P^n = P for n ≥ 1 (idempotence)"""
