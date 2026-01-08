@@ -3306,7 +3306,7 @@ class Algebra:
         """Alias for braid_phase (backward compatibility)."""
         return self.braid_phase
 
-def qudit(d = 2):
+def qudit(d = 2, symbolic=False):
     """Create d-level qudit algebra.
     
     For Pd-level systems, generators satisfy:
@@ -3315,6 +3315,7 @@ def qudit(d = 2):
     
     Args:
         d: Dimension of the qudit (d=2 for qubit, d=3 for qutrit, etc.)
+        symbolic: If True, use symbolic algebra even for d > 2 (default: False, uses numerical)
         
     Returns:
         Algebra instance configured for d-level system
@@ -3340,7 +3341,7 @@ def qudit(d = 2):
         # ====================================================================
         # NUMERICAL BACKEND: Replace symbolic generators for d > 2
         # ====================================================================
-        if ENABLE_NUMERICAL_QUDITS and d > 2:
+        if ENABLE_NUMERICAL_QUDITS and d > 2 and not symbolic:
             # Get numerical versions of I, X, Z
             I_num, X_num, Z_num = _numerical_algebra_ops(algebra)
             
