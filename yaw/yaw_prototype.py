@@ -6869,6 +6869,7 @@ def _yaw_to_numerical(op, backend):
         _NumericalOperator with the matrix representation
     """
     from sympy import Symbol, Pow, Mul, Add
+    from sympy.physics.quantum.dagger import Dagger
     
     result = _NumericalOperator(backend)
     result.algebra = op.algebra if hasattr(op, 'algebra') else None
@@ -6888,6 +6889,14 @@ def _yaw_to_numerical(op, backend):
                 return np.eye(backend.d, dtype=complex)
             else:
                 raise ValueError(f"Unknown symbol/operator: {name}")
+        
+        # Handle Dagger (adjoint)
+        elif isinstance(expr, Dagger):
+            # For unitary operators in Weyl algebra: X† = X^(d-1), Z† = Z^(d-1)
+            inner = expr.args[0]
+            inner_mat = expr_to_matrix(inner)
+            # Compute conjugate transpose
+            return inner_mat.conj().T
         
         # Handle powers
         elif isinstance(expr, Pow):
@@ -6926,7 +6935,7 @@ def _yaw_to_numerical(op, backend):
             return complex(expr) * np.eye(backend.d, dtype=complex)
         
         else:
-            raise ValueError(f"Cannot convert expression to matrix: {expr} (type: {type(expr)})")
+            raise ValueError(f"Cannot convert expression to matrix: {expr} (type: {type(expr).__name__})")
     
     result._matrix = expr_to_matrix(op._expr)
     return result
