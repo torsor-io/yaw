@@ -1831,10 +1831,27 @@ class TensorSum:
         return self.rmul(state)
 
     def normalize(self, verbose=False):
-        """Normalize and simplify the sum by combining like terms."""
+        """Normalize and simplify the sum by combining like terms.
+        
+        Note: For numerical operators (_NumericalOperator, _NumericalProjector),
+        normalization is skipped since they can't be symbolically combined.
+        """
         # Check cache first
         if self._normalized_cache is not None:
             return self._normalized_cache
+        
+        # Check if any terms contain numerical operators - if so, skip normalization
+        # since we can't symbolically combine numerical matrices
+        for term in self.terms:
+            if isinstance(term, TensorProduct):
+                for factor in term.factors:
+                    if type(factor).__name__ in ('_NumericalOperator', '_NumericalProjector'):
+                        # Skip normalization for numerical operators
+                        self._normalized_cache = self
+                        return self
+            elif type(term).__name__ in ('_NumericalOperator', '_NumericalProjector'):
+                self._normalized_cache = self
+                return self
         
         from collections import defaultdict
         from sympy import Mul, Symbol
@@ -6686,7 +6703,7 @@ class _NumericalEigenState:
                 f"Supported: X, Z (and powers)"
             )
     
-    def expect(self, operator):
+    def expect(self, operator, _depth=0):
         """Compute expectation value: ⟨ψ|O|ψ⟩."""
         if isinstance(operator, _NumericalProjector):
             # ⟨ψ|P|ψ⟩
@@ -6703,6 +6720,17 @@ class _NumericalEigenState:
                 f"Cannot compute expect with {type(operator).__name__}\n"
                 f"Supported: _NumericalProjector, _NumericalOperator"
             )
+    
+    def __matmul__(self, other):
+        """Tensor product of numerical eigenstates: |ψ⟩ ⊗ |φ⟩"""
+        if isinstance(other, (_NumericalEigenState, EigenState, TensorState)):
+            return TensorState([self, other])
+        else:
+            raise TypeError(f"Cannot tensor _NumericalEigenState with {type(other)}")
+    
+    def __ror__(self, operator):
+        """Enable operator | state syntax for expectation values."""
+        return self.expect(operator)
     
     def __repr__(self):
         return f"char({self.observable}, {self.index})"
@@ -6778,6 +6806,15 @@ class _NumericalProjector:
             return result
         else:
             raise NotImplementedError(f"Cannot right-multiply with {type(other).__name__}")
+    
+    def __matmul__(self, other):
+        """Tensor product of projectors: P₁ ⊗ P₂"""
+        if isinstance(other, (_NumericalProjector, _NumericalOperator, Projector, YawOperator)):
+            return TensorProduct([self, other])
+        elif isinstance(other, TensorProduct):
+            return TensorProduct([self] + other.factors)
+        else:
+            raise TypeError(f"Cannot tensor _NumericalProjector with {type(other)}")
     
     def __repr__(self):
         return f"proj({self.observable}, {self.index})"
