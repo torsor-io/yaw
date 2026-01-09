@@ -5411,8 +5411,14 @@ def measure(observable, state):
     This automatically constructs the eigenbasis of the observable and
     returns a callable measurement device.
     
+    For tensor product observables (e.g., X⊗X, Z⊗Z), the projectors are
+    constructed as sums over tensor products of individual projectors.
+    For example:
+        proj(X⊗X, 0) = proj(X,0)⊗proj(X,0) + proj(X,1)⊗proj(X,1)  [eigenvalue +1]
+        proj(X⊗X, 1) = proj(X,0)⊗proj(X,1) + proj(X,1)⊗proj(X,0)  [eigenvalue -1]
+    
     Args:
-        observable: Observable to measure (e.g., X, Z, or powers thereof)
+        observable: Observable to measure (e.g., X, Z, X⊗X, Z⊗Z)
         state: State to measure
         
     Returns:
@@ -5425,7 +5431,19 @@ def measure(observable, state):
         >>> device = measure(Z, psi)
         >>> post_state, outcome = device()
         >>> # outcome will be in {0, 1, 2, 3, 4, 5, 6}
+        
+        >>> # For Bell state correlations:
+        >>> CNOT = sum([proj(Z, k) @ X**k for k in range(2)])
+        >>> EPR = CNOT << (char(X, 0) @ char(Z, 0))
+        >>> device = measure(X @ X, EPR)
+        >>> post_state, outcome = device()
+        >>> # outcome will be 0 (+1) or 1 (-1)
     """
+    # Check if observable is a tensor product
+    if isinstance(observable, TensorProduct):
+        return _measure_tensor_product(observable, state)
+    
+    # Single operator case
     # Get the algebra and dimension
     if hasattr(observable, 'algebra') and observable.algebra is not None:
         algebra = observable.algebra
@@ -5444,6 +5462,87 @@ def measure(observable, state):
     
     # Return the measurement device
     return stMeasure(basis, state)
+
+
+def _measure_tensor_product(observable, state):
+    """Create measurement device for tensor product observable.
+    
+    For a tensor product A₁⊗A₂⊗...⊗Aₙ, the joint projectors are sums
+    over tensor products of individual projectors where the indices
+    combine to give the joint eigenvalue.
+    
+    For qubits (d=2), eigenvalue index k corresponds to eigenvalue (-1)^k.
+    The joint eigenvalue is the product of individual eigenvalues.
+    So the joint index k = (sum of individual indices) mod 2.
+    
+    Args:
+        observable: TensorProduct of observables
+        state: State to measure
+        
+    Returns:
+        StMeasurement device
+    """
+    from itertools import product
+    
+    factors = observable.factors
+    n = len(factors)
+    
+    # Get dimensions for each factor
+    dims = []
+    for factor in factors:
+        if hasattr(factor, 'algebra') and factor.algebra is not None:
+            algebra = factor.algebra
+            if hasattr(algebra, 'power_mod') and algebra.power_mod is not None:
+                dims.append(algebra.power_mod)
+            else:
+                dims.append(2)  # Default to qubit
+        else:
+            dims.append(2)  # Default to qubit
+    
+    # For now, only handle the case where all factors have same dimension
+    d = dims[0]
+    if not all(dim == d for dim in dims):
+        raise ValueError("All tensor factors must have the same dimension")
+    
+    # Build joint projectors
+    # For each joint outcome k in range(d), we sum over all index combinations
+    # (i₁, i₂, ..., iₙ) such that (product of eigenvalues) corresponds to k
+    
+    # For qubits: eigenvalue = (-1)^index, so product of eigenvalues = (-1)^(sum of indices)
+    # Joint outcome k = (sum of indices) mod 2
+    
+    joint_projectors = []
+    
+    for k in range(d):
+        # Collect all index combinations that give joint outcome k
+        terms = []
+        for indices in product(range(d), repeat=n):
+            # Compute the joint eigenvalue index
+            if d == 2:
+                # For qubits: joint index = sum of indices mod 2
+                joint_index = sum(indices) % 2
+            else:
+                # For qudits: joint index = sum of indices mod d
+                # This corresponds to product of ω^i eigenvalues
+                joint_index = sum(indices) % d
+            
+            if joint_index == k:
+                # Build tensor product of individual projectors
+                term = proj(factors[0], indices[0])
+                for i in range(1, n):
+                    term = term @ proj(factors[i], indices[i])
+                terms.append(term)
+        
+        # Sum all terms for this joint outcome
+        if terms:
+            joint_proj = sum(terms)
+        else:
+            # This shouldn't happen, but handle gracefully
+            joint_proj = observable.algebra.I * 0 if hasattr(observable, 'algebra') else 0
+        
+        joint_projectors.append(joint_proj)
+    
+    return stMeasure(joint_projectors, state)
 
 # ============================================================================
 # QUANTUM FOURIER TRANSFORM
