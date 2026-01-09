@@ -1002,6 +1002,7 @@ class YawOperator:
         - YawOperator * YawOperator
         - YawOperator * TensorSum (distributivity)
         - YawOperator * TensorProduct
+        - YawOperator * _NumericalOperator/_NumericalProjector
         - YawOperator * scalar
         """
         if isinstance(other, YawOperator):
@@ -1016,6 +1017,16 @@ class YawOperator:
             new_factors = other.factors.copy()
             new_factors[0] = self * new_factors[0]
             return TensorProduct(new_factors)
+        elif type(other).__name__ in ('_NumericalOperator', '_NumericalProjector'):
+            # Convert self to numerical form and multiply
+            # Check if self._expr is just a scalar
+            if self._expr.is_number:
+                # Scalar times numerical operator
+                return complex(self._expr) * other
+            else:
+                # Convert to numerical form
+                self_num = _yaw_to_numerical(self, other.backend)
+                return self_num * other
         else:
             # Scalar or SymPy expression
             return YawOperator(self._expr * other, self.algebra)
@@ -6794,16 +6805,40 @@ class _NumericalProjector:
             result.algebra = self.algebra
             return result
         
+        elif isinstance(other, YawOperator):
+            # Convert YawOperator to numerical and multiply
+            other_num = _yaw_to_numerical(other, self.backend)
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix @ other_num._matrix
+            result.algebra = self.algebra
+            return result
+        
         else:
             raise NotImplementedError(f"Cannot multiply with {type(other).__name__}")
     
     def __rmul__(self, other):
-        """Right multiplication: scalar * projector."""
+        """Right multiplication: scalar * projector or operator * projector."""
         if isinstance(other, (int, float, complex)):
             result = _NumericalOperator(self.backend)
             result._matrix = other * self._matrix
             result.algebra = self.algebra
             return result
+        
+        # Handle SymPy number types (One, Integer, Float, etc.)
+        if hasattr(other, 'is_number') and other.is_number:
+            result = _NumericalOperator(self.backend)
+            result._matrix = complex(other) * self._matrix
+            result.algebra = self.algebra
+            return result
+        
+        elif isinstance(other, YawOperator):
+            # Convert YawOperator to numerical and multiply
+            other_num = _yaw_to_numerical(other, self.backend)
+            result = _NumericalOperator(self.backend)
+            result._matrix = other_num._matrix @ self._matrix
+            result.algebra = self.algebra
+            return result
+        
         else:
             raise NotImplementedError(f"Cannot right-multiply with {type(other).__name__}")
     
@@ -6818,6 +6853,83 @@ class _NumericalProjector:
     
     def __repr__(self):
         return f"proj({self.observable}, {self.index})"
+
+
+def _yaw_to_numerical(op, backend):
+    """Convert a YawOperator to a _NumericalOperator using the backend.
+    
+    This parses the symbolic expression and builds the corresponding matrix.
+    Supports: X, Z, powers, products, sums, and scalars.
+    
+    Args:
+        op: YawOperator to convert
+        backend: QuditBackend instance
+        
+    Returns:
+        _NumericalOperator with the matrix representation
+    """
+    from sympy import Symbol, Pow, Mul, Add
+    
+    result = _NumericalOperator(backend)
+    result.algebra = op.algebra if hasattr(op, 'algebra') else None
+    
+    def expr_to_matrix(expr):
+        """Recursively convert SymPy expression to matrix."""
+        from sympy.physics.quantum.operator import Operator
+        
+        # Handle symbols and quantum operators
+        if isinstance(expr, Symbol) or isinstance(expr, Operator):
+            name = str(expr)
+            if name == 'X':
+                return backend.X.copy()
+            elif name == 'Z':
+                return backend.Z.copy()
+            elif name == 'I':
+                return np.eye(backend.d, dtype=complex)
+            else:
+                raise ValueError(f"Unknown symbol/operator: {name}")
+        
+        # Handle powers
+        elif isinstance(expr, Pow):
+            base_mat = expr_to_matrix(expr.base)
+            exp = int(expr.exp)
+            if exp >= 0:
+                result_mat = np.eye(backend.d, dtype=complex)
+                for _ in range(exp):
+                    result_mat = result_mat @ base_mat
+                return result_mat
+            else:
+                # Negative power: compute inverse
+                result_mat = np.linalg.matrix_power(base_mat, exp)
+                return result_mat
+        
+        # Handle multiplication
+        elif isinstance(expr, Mul):
+            result_mat = np.eye(backend.d, dtype=complex)
+            scalar = complex(1)
+            for arg in expr.args:
+                if arg.is_number:
+                    scalar *= complex(arg)
+                else:
+                    result_mat = result_mat @ expr_to_matrix(arg)
+            return scalar * result_mat
+        
+        # Handle addition
+        elif isinstance(expr, Add):
+            result_mat = np.zeros((backend.d, backend.d), dtype=complex)
+            for arg in expr.args:
+                result_mat = result_mat + expr_to_matrix(arg)
+            return result_mat
+        
+        # Handle pure numbers (including 1 for identity)
+        elif expr.is_number:
+            return complex(expr) * np.eye(backend.d, dtype=complex)
+        
+        else:
+            raise ValueError(f"Cannot convert expression to matrix: {expr} (type: {type(expr)})")
+    
+    result._matrix = expr_to_matrix(op._expr)
+    return result
 
 
 class _NumericalOperator:
@@ -6839,6 +6951,14 @@ class _NumericalOperator:
         elif isinstance(other, (_NumericalOperator, _NumericalProjector)):
             result = _NumericalOperator(self.backend)
             result._matrix = self._matrix @ other._matrix
+            result.algebra = self.algebra
+            return result
+        
+        elif isinstance(other, YawOperator):
+            # Convert YawOperator to numerical and multiply
+            other_num = _yaw_to_numerical(other, self.backend)
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix @ other_num._matrix
             result.algebra = self.algebra
             return result
         
@@ -6872,8 +6992,15 @@ class _NumericalOperator:
             result._matrix = other * self._matrix
             result.algebra = self.algebra
             return result
-        else:
-            return NotImplemented
+        
+        # Handle SymPy number types (One, Integer, Float, etc.)
+        if hasattr(other, 'is_number') and other.is_number:
+            result = _NumericalOperator(self.backend)
+            result._matrix = complex(other) * self._matrix
+            result.algebra = self.algebra
+            return result
+        
+        return NotImplemented
     
     def __radd__(self, other):
         """Right addition: scalar + operator."""
@@ -7112,6 +7239,7 @@ def conj_state(U, state):
 
 def _get_sympy_expr(obj):
     """Extract SymPy expression from YawOperator or return as-is."""
+    from sympy import Symbol
     if hasattr(obj, '_expr'):
         return obj._expr
     elif isinstance(obj, Symbol):
