@@ -1697,6 +1697,11 @@ class TensorSum:
             # Distribute multiplication over sum: (A + B) * C = A*C + B*C
             return TensorSum([term * other for term in self.terms])
         
+        # Handle numerical operators
+        if type(other).__name__ in ('_NumericalOperator', '_NumericalProjector'):
+            # Distribute multiplication over sum
+            return TensorSum([term * other for term in self.terms], _skip_normalize=True)
+        
         raise TypeError(f"Cannot multiply TensorSum with {type(other)}")
     
     def __rmul__(self, other):
@@ -1712,6 +1717,11 @@ class TensorSum:
         if isinstance(other, (TensorProduct, YawOperator, TensorSum)):
             # Distribute multiplication over sum: C * (A + B) = C*A + C*B
             return TensorSum([other * term for term in self.terms])
+        
+        # Handle numerical operators
+        if type(other).__name__ in ('_NumericalOperator', '_NumericalProjector'):
+            # Distribute multiplication over sum
+            return TensorSum([other * term for term in self.terms], _skip_normalize=True)
         
         raise TypeError(f"Cannot multiply {type(other)} with TensorSum")
     
@@ -2587,6 +2597,12 @@ class TensorProduct:
                 new_factors = self.factors.copy()
                 new_factors[0] = new_factors[0] * other
                 return TensorProduct(new_factors)
+        
+        # Numerical operators: multiply first factor
+        elif type(other).__name__ in ('_NumericalOperator', '_NumericalProjector'):
+            new_factors = self.factors.copy()
+            new_factors[0] = new_factors[0] * other
+            return TensorProduct(new_factors)
         
         else:
             raise TypeError(f"Cannot multiply TensorProduct with {type(other)}")
@@ -6726,10 +6742,22 @@ class _NumericalEigenState:
             val = self._vector.conj() @ operator._matrix @ self._vector
             return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
         
+        elif isinstance(operator, YawOperator):
+            # Convert YawOperator to numerical form and compute expectation
+            op_num = _yaw_to_numerical(operator, self.backend)
+            val = self._vector.conj() @ op_num._matrix @ self._vector
+            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+        
+        elif isinstance(operator, Projector):
+            # Convert symbolic projector to numerical
+            proj_num = _NumericalProjector(operator.observable, operator.index, self.backend)
+            prob = np.real(self._vector.conj() @ proj_num._matrix @ self._vector)
+            return max(0.0, prob)
+        
         else:
             raise NotImplementedError(
                 f"Cannot compute expect with {type(operator).__name__}\n"
-                f"Supported: _NumericalProjector, _NumericalOperator"
+                f"Supported: _NumericalProjector, _NumericalOperator, YawOperator, Projector"
             )
     
     def __matmul__(self, other):
@@ -7134,7 +7162,7 @@ class _NumericalLeftMultipliedState:
         
         # Don't normalize here - normalization happens during measurement
     
-    def expect(self, operator):
+    def expect(self, operator, _depth=0):
         """Compute expectation: ⟨Aψ|O|Aψ⟩."""
         # Special case: if operator is projector, delegate to projector
         if isinstance(operator, _NumericalProjector):
@@ -7149,6 +7177,19 @@ class _NumericalLeftMultipliedState:
         if isinstance(operator, (_NumericalProjector, _NumericalOperator)):
             val = normalized.conj() @ operator._matrix @ normalized
             return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+        
+        elif isinstance(operator, YawOperator):
+            # Convert YawOperator to numerical form
+            op_num = _yaw_to_numerical(operator, self.backend)
+            val = normalized.conj() @ op_num._matrix @ normalized
+            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+        
+        elif isinstance(operator, Projector):
+            # Convert symbolic projector to numerical
+            proj_num = _NumericalProjector(operator.observable, operator.index, self.backend)
+            val = normalized.conj() @ proj_num._matrix @ normalized
+            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+        
         else:
             raise NotImplementedError(f"Cannot compute expect with {type(operator).__name__}")
     
