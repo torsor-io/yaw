@@ -2193,6 +2193,38 @@ class TensorSum:
         
         return str(structure)
     
+    def to_matrix(self, backend=None):
+        """Convert to matrix by summing matrices of all terms.
+        
+        Args:
+            backend: Optional QuditBackend for converting symbolic operators
+            
+        Returns:
+            numpy array representing the full operator matrix
+        """
+        if not self.terms:
+            raise ValueError("Cannot convert empty TensorSum to matrix")
+        
+        # Get first term's matrix to determine size
+        first_term = self.terms[0]
+        if hasattr(first_term, 'to_matrix'):
+            result = first_term.to_matrix(backend)
+        elif hasattr(first_term, '_matrix'):
+            result = first_term._matrix.copy()
+        else:
+            raise ValueError(f"Cannot convert {type(first_term).__name__} to matrix")
+        
+        # Add remaining terms
+        for term in self.terms[1:]:
+            if hasattr(term, 'to_matrix'):
+                result = result + term.to_matrix(backend)
+            elif hasattr(term, '_matrix'):
+                result = result + term._matrix
+            else:
+                raise ValueError(f"Cannot convert {type(term).__name__} to matrix")
+        
+        return result
+    
 class TensorProduct:
     """Tensor product of operators: A ⊗ B ⊗ C"""
     
@@ -2679,6 +2711,40 @@ class TensorProduct:
                 factor_strs.append(str(f))
         
         return " @ ".join(factor_strs)
+    
+    def to_matrix(self, backend=None):
+        """Convert to matrix via Kronecker product.
+        
+        Computes the full matrix representation by taking the Kronecker
+        product of all factor matrices.
+        
+        Args:
+            backend: Optional QuditBackend for converting symbolic operators
+            
+        Returns:
+            numpy array representing the full operator matrix
+        """
+        matrices = []
+        for factor in self.factors:
+            if hasattr(factor, 'to_matrix'):
+                m = factor.to_matrix(backend)
+            elif hasattr(factor, '_matrix'):
+                m = factor._matrix
+            elif isinstance(factor, YawOperator) and backend is not None:
+                op_num = _yaw_to_numerical(factor, backend)
+                m = op_num._matrix
+            elif isinstance(factor, Projector) and backend is not None:
+                proj_num = _NumericalProjector(factor.observable, factor.index, backend)
+                m = proj_num._matrix
+            else:
+                raise ValueError(f"Cannot convert {type(factor).__name__} to matrix")
+            matrices.append(m)
+        
+        # Compute Kronecker product
+        result = matrices[0]
+        for m in matrices[1:]:
+            result = np.kron(result, m)
+        return result
     
     def __repr__(self):
         # *** FIXED: Return string directly ***
@@ -4027,9 +4093,56 @@ class TensorState(State):
         # Handle tensor product operators
         if isinstance(operator, TensorProduct):
             if len(operator.factors) != len(self.states):
+                # Factor count mismatch - try numerical computation
+                # This handles cases where one state wraps multiple subsystems
+                # (e.g., an entangled 2-qudit state counted as 1 factor)
+                num_subsystems = self.num_subsystems()
+                
+                if len(operator.factors) == num_subsystems:
+                    # Use numerical approach: flatten to vectors/matrices
+                    try:
+                        # Find a backend from the states
+                        backend = None
+                        for state in self.states:
+                            if hasattr(state, 'backend'):
+                                backend = state.backend
+                                break
+                            elif hasattr(state, 'state') and hasattr(state.state, 'backend'):
+                                backend = state.state.backend
+                                break
+                        
+                        if backend is None:
+                            # Try to find backend from nested structures
+                            def find_backend(obj):
+                                if hasattr(obj, 'backend') and obj.backend is not None:
+                                    return obj.backend
+                                if hasattr(obj, 'state'):
+                                    return find_backend(obj.state)
+                                if hasattr(obj, 'states'):
+                                    for s in obj.states:
+                                        b = find_backend(s)
+                                        if b is not None:
+                                            return b
+                                return None
+                            backend = find_backend(self)
+                        
+                        if backend is not None:
+                            state_vec = self.to_vector(backend)
+                            op_mat = operator.to_matrix(backend)
+                            
+                            # Normalize state vector
+                            norm = np.linalg.norm(state_vec)
+                            if norm > 1e-10:
+                                state_vec = state_vec / norm
+                            
+                            val = state_vec.conj() @ op_mat @ state_vec
+                            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+                    except Exception:
+                        pass  # Fall through to error
+                
                 raise ValueError(
                     f"Operator has {len(operator.factors)} factors "
-                    f"but state has {len(self.states)} factors"
+                    f"but state has {len(self.states)} factors (total subsystems: {num_subsystems})"
                 )
             
             # Compute product of individual expectations
@@ -4092,6 +4205,51 @@ class TensorState(State):
                 flat_states.append(state)
         
         return TensorState(flat_states)
+    
+    def num_subsystems(self):
+        """Count the total number of quantum subsystems in this state.
+        
+        This counts the actual number of subsystems, not just len(self.states),
+        which handles cases where one state factor wraps multiple subsystems
+        (e.g., an entangled 2-qudit state).
+        """
+        total = 0
+        for state in self.states:
+            if hasattr(state, 'num_subsystems'):
+                total += state.num_subsystems()
+            elif isinstance(state, TensorState):
+                total += state.num_subsystems()
+            else:
+                total += 1
+        return total
+    
+    def to_vector(self, backend=None):
+        """Convert to a single state vector via Kronecker product.
+        
+        This flattens the tensor structure into a single vector representing
+        the full quantum state.
+        
+        Args:
+            backend: Optional QuditBackend for dimension info
+            
+        Returns:
+            numpy array representing the state vector
+        """
+        vectors = []
+        for state in self.states:
+            if hasattr(state, 'to_vector'):
+                v = state.to_vector(backend)
+            elif hasattr(state, '_vector'):
+                v = state._vector
+            else:
+                raise ValueError(f"Cannot convert {type(state).__name__} to vector")
+            vectors.append(v)
+        
+        # Compute Kronecker product
+        result = vectors[0]
+        for v in vectors[1:]:
+            result = np.kron(result, v)
+        return result
     
 class LeftMultipliedState(State):
     """State with left multiplication: (A <<<) φ
@@ -4173,6 +4331,41 @@ class LeftMultipliedState(State):
         if hasattr(self.state, 'flatten'):
             return LeftMultipliedState(self.operator, self.state.flatten())
         return self
+    
+    def num_subsystems(self):
+        """Count the number of subsystems in the underlying state."""
+        if hasattr(self.state, 'num_subsystems'):
+            return self.state.num_subsystems()
+        elif isinstance(self.state, TensorState):
+            return self.state.num_subsystems()
+        else:
+            return 1
+    
+    def to_vector(self, backend=None):
+        """Convert to state vector: O|ψ⟩ as a vector.
+        
+        Computes operator_matrix @ state_vector.
+        """
+        # Get the state vector
+        if hasattr(self.state, 'to_vector'):
+            state_vec = self.state.to_vector(backend)
+        elif hasattr(self.state, '_vector'):
+            state_vec = self.state._vector
+        else:
+            raise ValueError(f"Cannot convert {type(self.state).__name__} to vector")
+        
+        # Get the operator matrix
+        if hasattr(self.operator, 'to_matrix'):
+            op_mat = self.operator.to_matrix(backend)
+        elif hasattr(self.operator, '_matrix'):
+            op_mat = self.operator._matrix
+        elif isinstance(self.operator, YawOperator) and backend is not None:
+            op_num = _yaw_to_numerical(self.operator, backend)
+            op_mat = op_num._matrix
+        else:
+            raise ValueError(f"Cannot convert operator {type(self.operator).__name__} to matrix")
+        
+        return op_mat @ state_vec
 
 
 class RightMultipliedState(State):
@@ -4246,6 +4439,42 @@ class RightMultipliedState(State):
         if hasattr(self.state, 'flatten'):
             return RightMultipliedState(self.operator, self.state.flatten())
         return self
+    
+    def num_subsystems(self):
+        """Count the number of subsystems in the underlying state."""
+        if hasattr(self.state, 'num_subsystems'):
+            return self.state.num_subsystems()
+        elif isinstance(self.state, TensorState):
+            return self.state.num_subsystems()
+        else:
+            return 1
+    
+    def to_vector(self, backend=None):
+        """Convert to state vector.
+        
+        For right-multiplied state ψ(BA), this is A†|ψ⟩.
+        """
+        # Get the state vector
+        if hasattr(self.state, 'to_vector'):
+            state_vec = self.state.to_vector(backend)
+        elif hasattr(self.state, '_vector'):
+            state_vec = self.state._vector
+        else:
+            raise ValueError(f"Cannot convert {type(self.state).__name__} to vector")
+        
+        # Get the operator's adjoint matrix
+        if hasattr(self.operator, 'to_matrix'):
+            op_mat = self.operator.to_matrix(backend)
+        elif hasattr(self.operator, '_matrix'):
+            op_mat = self.operator._matrix
+        elif isinstance(self.operator, YawOperator) and backend is not None:
+            op_num = _yaw_to_numerical(self.operator, backend)
+            op_mat = op_num._matrix
+        else:
+            raise ValueError(f"Cannot convert operator {type(self.operator).__name__} to matrix")
+        
+        # Right multiplication ψ(BA) corresponds to A†|ψ⟩
+        return op_mat.conj().T @ state_vec
 
 
 class ScaledState(State):
