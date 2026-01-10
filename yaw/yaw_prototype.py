@@ -2957,6 +2957,10 @@ class Algebra:
                     self.power_mod = n  # *** Store the modulus ***
                     for name, op_expr in sympy_gens.items():
                         rules.append((op_expr**n, sympy_I))
+                        # For unitary operators with X^n = I, we have X† = X^(n-1)
+                        # Only add this rule if NOT hermitian (d > 2)
+                        if not has_herm:
+                            rules.append((Dagger(op_expr), op_expr**(n-1)))
             
             elif '=' in rel:
                 # Equation relation: lhs = rhs
@@ -3515,7 +3519,7 @@ def qudit(d = 2, symbolic=True):
         # Create algebra with power and braiding relations
         algebra = Algebra(
             gens=['X', 'Z'],
-            rels=['herm', 'unit', f'pow({d})', f'braid(exp(2*pi*I/{d}))']
+            rels=['unit', f'pow({d})', f'braid(exp(2*pi*I/{d}))']
         )
         
         # ====================================================================
