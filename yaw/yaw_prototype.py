@@ -151,6 +151,8 @@ __all__ = [
     # Numerical qudit backend
     'ENABLE_NUMERICAL_QUDITS', '_numerical_algebra_ops', '_get_qudit_backend',
     '_NumericalEigenState', '_NumericalProjector', '_NumericalOperator',
+    # Numerical comparison and inspection
+    'eq_num', 'is_projector', 'is_unitary', 'is_hermitian', 'to_matrix',
 ]
 
 # ============================================================================
@@ -7597,6 +7599,334 @@ def conj_state(U, state):
         ConjugatedState instance
     """
     return U.conj_state(state)
+
+
+def eq_num(op1, op2, tol=1e-10):
+    """Numerically compare two operators.
+    
+    Converts both operators to matrices and compares them.
+    Works for YawOperator, TensorProduct, TensorSum, and numerical operators.
+    
+    This is especially useful when symbolic comparison would be too slow
+    (e.g., when operators have hundreds of terms).
+    
+    Args:
+        op1: First operator
+        op2: Second operator
+        tol: Tolerance for numerical comparison (default: 1e-10)
+        
+    Returns:
+        True if operators are numerically equal within tolerance
+        
+    Example:
+        >>> alg = qudit(3, symbolic=True)
+        >>> X, Z = alg.X, alg.Z
+        >>> CNOT = sum([proj(Z,k).e @ X**k for k in range(3)])
+        >>> Pi = CNOT.d >> (proj(X, 0).e @ proj(Z, 0).e)
+        >>> eq_num(Pi * Pi, Pi)  # Check Pi is a projector
+        True
+    """
+    # Find dimension and backend
+    d, backend = _find_dimension_and_backend(op1, op2)
+    
+    if d is None:
+        raise ValueError("Cannot determine dimension from operators")
+    
+    # Convert to matrices
+    mat1 = _operator_to_matrix(op1, d, backend)
+    mat2 = _operator_to_matrix(op2, d, backend)
+    
+    # Compare
+    diff = np.linalg.norm(mat1 - mat2)
+    return diff < tol
+
+
+def is_projector(op, tol=1e-10):
+    """Check if an operator is a projector (P² = P) numerically.
+    
+    This is more efficient than computing op*op symbolically when
+    the operator has many terms.
+    
+    Args:
+        op: Operator to check
+        tol: Tolerance for numerical comparison (default: 1e-10)
+        
+    Returns:
+        True if op is a projector within tolerance
+        
+    Example:
+        >>> alg = qudit(3, symbolic=True)
+        >>> X, Z = alg.X, alg.Z
+        >>> is_projector(proj(X, 0))  # True
+        >>> is_projector(X)  # False
+    """
+    d, backend = _find_dimension_and_backend(op, op)
+    
+    if d is None:
+        raise ValueError("Cannot determine dimension from operator")
+    
+    mat = _operator_to_matrix(op, d, backend)
+    mat_squared = mat @ mat
+    diff = np.linalg.norm(mat_squared - mat)
+    return diff < tol
+
+
+def is_unitary(op, tol=1e-10):
+    """Check if an operator is unitary (U†U = UU† = I) numerically.
+    
+    Args:
+        op: Operator to check
+        tol: Tolerance for numerical comparison (default: 1e-10)
+        
+    Returns:
+        True if op is unitary within tolerance
+        
+    Example:
+        >>> alg = qudit(3, symbolic=True)
+        >>> X, Z = alg.X, alg.Z
+        >>> is_unitary(X)  # True
+        >>> is_unitary(proj(X, 0))  # False
+    """
+    d, backend = _find_dimension_and_backend(op, op)
+    
+    if d is None:
+        raise ValueError("Cannot determine dimension from operator")
+    
+    mat = _operator_to_matrix(op, d, backend)
+    I_mat = np.eye(mat.shape[0], dtype=complex)
+    
+    diff1 = np.linalg.norm(mat.conj().T @ mat - I_mat)
+    diff2 = np.linalg.norm(mat @ mat.conj().T - I_mat)
+    
+    return diff1 < tol and diff2 < tol
+
+
+def is_hermitian(op, tol=1e-10):
+    """Check if an operator is Hermitian (A† = A) numerically.
+    
+    Args:
+        op: Operator to check
+        tol: Tolerance for numerical comparison (default: 1e-10)
+        
+    Returns:
+        True if op is Hermitian within tolerance
+    """
+    d, backend = _find_dimension_and_backend(op, op)
+    
+    if d is None:
+        raise ValueError("Cannot determine dimension from operator")
+    
+    mat = _operator_to_matrix(op, d, backend)
+    diff = np.linalg.norm(mat - mat.conj().T)
+    return diff < tol
+
+
+def to_matrix(op):
+    """Convert an operator to its matrix representation.
+    
+    Args:
+        op: Operator (YawOperator, TensorProduct, TensorSum, etc.)
+        
+    Returns:
+        numpy array representing the operator matrix
+        
+    Example:
+        >>> alg = qudit(3, symbolic=True)
+        >>> X = alg.X
+        >>> to_matrix(X)  # Returns 3x3 shift matrix
+    """
+    d, backend = _find_dimension_and_backend(op, op)
+    
+    if d is None:
+        raise ValueError("Cannot determine dimension from operator")
+    
+    return _operator_to_matrix(op, d, backend)
+
+
+def _find_dimension_and_backend(op1, op2):
+    """Find dimension and backend from operators."""
+    # Try to find backend from numerical operators
+    for op in [op1, op2]:
+        backend = _extract_backend(op)
+        if backend is not None:
+            return backend.d, backend
+    
+    # Try to find algebra and get dimension
+    for op in [op1, op2]:
+        alg = _extract_algebra(op)
+        if alg is not None and hasattr(alg, 'power_mod') and alg.power_mod is not None:
+            d = alg.power_mod
+            # Create a temporary backend
+            from qudit_backend import QuditBackend
+            return d, QuditBackend(d)
+    
+    # Default to qubit
+    from qudit_backend import QuditBackend
+    return 2, QuditBackend(2)
+
+
+def _extract_backend(op):
+    """Extract backend from an operator."""
+    if hasattr(op, 'backend') and op.backend is not None:
+        return op.backend
+    
+    if isinstance(op, TensorSum):
+        for term in op.terms:
+            backend = _extract_backend(term)
+            if backend is not None:
+                return backend
+    
+    if isinstance(op, TensorProduct):
+        for factor in op.factors:
+            backend = _extract_backend(factor)
+            if backend is not None:
+                return backend
+    
+    return None
+
+
+def _extract_algebra(op):
+    """Extract algebra from an operator."""
+    if hasattr(op, 'algebra') and op.algebra is not None:
+        return op.algebra
+    
+    if isinstance(op, TensorSum):
+        for term in op.terms:
+            alg = _extract_algebra(term)
+            if alg is not None:
+                return alg
+    
+    if isinstance(op, TensorProduct):
+        for factor in op.factors:
+            alg = _extract_algebra(factor)
+            if alg is not None:
+                return alg
+    
+    return None
+
+
+def _operator_to_matrix(op, d, backend=None):
+    """Convert an operator to a matrix.
+    
+    Args:
+        op: Operator (YawOperator, TensorProduct, TensorSum, numerical, etc.)
+        d: Dimension of single qudit
+        backend: Optional QuditBackend
+        
+    Returns:
+        numpy array representing the operator matrix
+    """
+    # If it already has a to_matrix method that works
+    if hasattr(op, 'to_matrix'):
+        try:
+            return op.to_matrix(backend)
+        except:
+            pass
+    
+    # If it's a numerical operator with _matrix
+    if hasattr(op, '_matrix'):
+        return op._matrix
+    
+    # Build basic matrices
+    omega = np.exp(2j * np.pi / d)
+    X_mat = np.zeros((d, d), dtype=complex)
+    Z_mat = np.zeros((d, d), dtype=complex)
+    for i in range(d):
+        X_mat[i, (i+1) % d] = 1
+        Z_mat[i, i] = omega ** i
+    I_mat = np.eye(d, dtype=complex)
+    
+    def eval_yawop(yawop):
+        """Convert YawOperator to matrix."""
+        from sympy import Pow, Mul, Add, Symbol
+        from sympy.physics.quantum.operator import Operator
+        from sympy.physics.quantum.dagger import Dagger
+        
+        expr = yawop._expr if hasattr(yawop, '_expr') else yawop
+        
+        def eval_expr(e):
+            if e.is_number:
+                return complex(e) * I_mat
+            elif isinstance(e, Dagger):
+                inner = eval_expr(e.args[0])
+                return inner.conj().T
+            elif isinstance(e, (Symbol, Operator)):
+                name = str(e)
+                if name == 'X':
+                    return X_mat.copy()
+                elif name == 'Z':
+                    return Z_mat.copy()
+                elif name == 'I':
+                    return I_mat.copy()
+                else:
+                    raise ValueError(f"Unknown operator: {name}")
+            elif isinstance(e, Pow):
+                base = eval_expr(e.base)
+                exp_val = int(e.exp)
+                if exp_val >= 0:
+                    return np.linalg.matrix_power(base, exp_val)
+                else:
+                    return np.linalg.matrix_power(np.linalg.inv(base), -exp_val)
+            elif isinstance(e, Mul):
+                result = I_mat.copy()
+                coeff = 1
+                for arg in e.args:
+                    if arg.is_number:
+                        coeff *= complex(arg)
+                    else:
+                        result = result @ eval_expr(arg)
+                return coeff * result
+            elif isinstance(e, Add):
+                result = np.zeros((d, d), dtype=complex)
+                for arg in e.args:
+                    result += eval_expr(arg)
+                return result
+            else:
+                raise ValueError(f"Cannot evaluate: {e} ({type(e).__name__})")
+        
+        return eval_expr(expr)
+    
+    # Handle different operator types
+    if isinstance(op, YawOperator):
+        return eval_yawop(op)
+    
+    elif isinstance(op, TensorProduct):
+        # Kronecker product of factors
+        matrices = []
+        for factor in op.factors:
+            if hasattr(factor, '_matrix'):
+                matrices.append(factor._matrix)
+            elif isinstance(factor, YawOperator):
+                matrices.append(eval_yawop(factor))
+            elif isinstance(factor, Projector):
+                # For symbolic projector, evaluate
+                proj_mat = eval_yawop(factor.expand())
+                matrices.append(proj_mat)
+            else:
+                matrices.append(_operator_to_matrix(factor, d, backend))
+        
+        result = matrices[0]
+        for m in matrices[1:]:
+            result = np.kron(result, m)
+        return result
+    
+    elif isinstance(op, TensorSum):
+        # Sum of terms
+        result = None
+        for term in op.terms:
+            term_mat = _operator_to_matrix(term, d, backend)
+            if result is None:
+                result = term_mat
+            else:
+                result = result + term_mat
+        return result if result is not None else np.zeros((d, d), dtype=complex)
+    
+    elif isinstance(op, Projector):
+        return eval_yawop(op.expand())
+    
+    else:
+        raise ValueError(f"Cannot convert {type(op).__name__} to matrix")
+
 
 def _get_sympy_expr(obj):
     """Extract SymPy expression from YawOperator or return as-is."""
