@@ -7112,6 +7112,26 @@ class _NumericalProjector:
         else:
             raise TypeError(f"Cannot tensor _NumericalProjector with {type(other)}")
     
+    def expand(self):
+        """Expand projector to operator form.
+        
+        For numerical projectors, returns a _NumericalOperator with the same matrix.
+        This is the numerical equivalent of Projector.expand() which returns
+        the operator representation of the projector.
+        
+        Returns:
+            _NumericalOperator with the projector matrix
+        """
+        result = _NumericalOperator(self.backend)
+        result._matrix = self._matrix.copy()
+        result.algebra = self.algebra
+        return result
+    
+    @property
+    def e(self):
+        """Shorthand for expand(): proj(X, 0).e returns the operator form."""
+        return self.expand()
+    
     def __repr__(self):
         return f"proj({self.observable}, {self.index})"
 
@@ -7120,7 +7140,7 @@ def _yaw_to_numerical(op, backend):
     """Convert a YawOperator to a _NumericalOperator using the backend.
     
     This parses the symbolic expression and builds the corresponding matrix.
-    Supports: X, Z, powers, products, sums, and scalars.
+    Supports: X, Z, powers, products, sums, Dagger, and scalars.
     
     Args:
         op: YawOperator to convert
@@ -7366,6 +7386,15 @@ class _NumericalOperator:
     def __lshift__(self, state):
         """Apply to state: state << operator means operator|state⟩."""
         return _NumericalLeftMultipliedState(self, state)
+    
+    def __matmul__(self, other):
+        """Tensor product of operators: A ⊗ B"""
+        if isinstance(other, (_NumericalOperator, _NumericalProjector, YawOperator, Projector)):
+            return TensorProduct([self, other])
+        elif isinstance(other, TensorProduct):
+            return TensorProduct([self] + other.factors)
+        else:
+            raise TypeError(f"Cannot tensor _NumericalOperator with {type(other)}")
     
     def __repr__(self):
         # Check if this is the identity matrix
