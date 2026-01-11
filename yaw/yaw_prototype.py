@@ -373,7 +373,7 @@ class Encoding:
             logical_algebra: Source algebra (logical qubits/qudits)
             physical_algebra: Target algebra (physical qubits/qudits)
             generator_map: Dict mapping logical generator names to physical operators
-                          e.g., {'X': X⊗X⊗X, 'Z': Z⊗Z⊗Z, 'I': I⊗I⊗I}
+                          e.g., {'X': XâŠ—XâŠ—X, 'Z': ZâŠ—ZâŠ—Z, 'I': IâŠ—IâŠ—I}
         """
         self.logical_algebra = logical_algebra
         self.physical_algebra = physical_algebra
@@ -7113,18 +7113,67 @@ class _NumericalProjector:
             raise TypeError(f"Cannot tensor _NumericalProjector with {type(other)}")
     
     def expand(self):
-        """Expand projector to operator form.
+        """Expand projector to symbolic operator form.
         
-        For numerical projectors, returns a _NumericalOperator with the same matrix.
-        This is the numerical equivalent of Projector.expand() which returns
-        the operator representation of the projector.
+        For qudit dimension d, the projector onto the k-th eigenvalue of observable O is:
+        P_k(O) = (1/d) * Σ_{j=0}^{d-1} ω^{-jk} O^j
+        
+        where ω = exp(2πi/d)
         
         Returns:
-            _NumericalOperator with the projector matrix
+            YawOperator representing the symbolic expansion
         """
-        result = _NumericalOperator(self.backend)
-        result._matrix = self._matrix.copy()
-        result.algebra = self.algebra
+        d = self.backend.d
+        k = self.index
+        omega = np.exp(2j * np.pi / d)
+        
+        # Get the base observable (X or Z)
+        if isinstance(self.observable, _NumericalOperator) and hasattr(self.observable, 'name'):
+            base_name = self.observable.name
+        else:
+            obs_str = str(self.observable)
+            base_name = obs_str.split('**')[0].strip()
+        
+        # Get the symbolic operator from the algebra
+        if self.algebra is not None:
+            if base_name == 'X':
+                base_op = self.algebra.X
+            elif base_name == 'Z':
+                base_op = self.algebra.Z
+            else:
+                # Fall back to numerical
+                result = _NumericalOperator(self.backend)
+                result._matrix = self._matrix.copy()
+                result.algebra = self.algebra
+                return result
+        else:
+            # No algebra, fall back to numerical
+            result = _NumericalOperator(self.backend)
+            result._matrix = self._matrix.copy()
+            result.algebra = self.algebra
+            return result
+        
+        # Build the symbolic sum: (1/d) * Σ_{j=0}^{d-1} ω^{-jk} O^j
+        from sympy import Rational, exp, pi, I as symI
+        
+        terms = []
+        for j in range(d):
+            coeff = omega ** (-j * k)
+            # Clean up coefficient
+            if np.abs(coeff.imag) < 1e-10:
+                coeff = coeff.real
+                if np.abs(coeff - round(coeff)) < 1e-10:
+                    coeff = int(round(coeff))
+            
+            term = base_op ** j
+            if coeff != 1:
+                term = coeff * term
+            terms.append(term)
+        
+        # Sum and divide by d
+        result = sum(terms)
+        result = result / d
+        
         return result
     
     @property
