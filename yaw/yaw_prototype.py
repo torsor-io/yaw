@@ -1987,19 +1987,21 @@ class TensorSum:
             if structure is None:
                 key = "scalar"
             elif isinstance(structure, TensorProduct):
-                # Key from normalized factor strings
+                # Key from factor expressions (already canonical from Step 2)
                 factor_strs = []
                 for f in structure.factors:
                     if isinstance(f, YawOperator):
-                        f_norm = f.normalize() if hasattr(f, 'normalize') else f
-                        factor_strs.append(str(f_norm._expr))
+                        # Factors are already canonical - don't re-normalize
+                        factor_strs.append(str(f._expr))
+                    elif isinstance(f, Projector):
+                        # Use projector's string representation
+                        factor_strs.append(str(f))
                     else:
                         factor_strs.append(str(f))
                 key = " @ ".join(factor_strs)
             else:
-                # YawOperator
-                s_norm = structure.normalize() if hasattr(structure, 'normalize') else structure
-                key = str(s_norm._expr)
+                # YawOperator - already canonical from Step 2
+                key = str(structure._expr)
 
             structure_groups[key].append((coeff, structure))
 
