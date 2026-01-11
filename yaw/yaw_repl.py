@@ -907,7 +907,8 @@ class YawREPL:
             qudit, qubit, matrix_units,
             norm, measure,  # Fourier sampling convenience functions
             Encoding, rep, comm, acomm, gnsVec, gnsMat, spec, minimal_poly,
-            MixedState, mixed
+            MixedState, mixed,
+            is_projector, is_unitary, is_hermitian  # Operator property checks
         )
 
         # Add current algebra if exists
@@ -993,6 +994,9 @@ class YawREPL:
         namespace['minimal_poly'] = minimal_poly
         namespace['MixedState'] = MixedState
         namespace['mixed'] = mixed
+        namespace['is_projector'] = is_projector
+        namespace['is_unitary'] = is_unitary
+        namespace['is_hermitian'] = is_hermitian
         
         # Generator name helpers for comprehensions
         # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
