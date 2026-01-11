@@ -1412,7 +1412,9 @@ class YawOperator:
         
         # 7. Pattern: number*I within parentheses (e.g., "(1.0 + 2.0*I)" -> "(1.0+2.0j)")
         #    This handles complex coefficients like (1+1j)*X
-        s = re.sub(r'(\d+\.?\d*)\*I(?!\*[A-Z])', r'\1j', s)
+        #    IMPORTANT: Use negative lookbehind to avoid matching exponents like X**2*I
+        #    where the 2*I is part of X**2 followed by identity operator I
+        s = re.sub(r'(?<!\*)(\d+\.?\d*)\*I(?!\*[A-Z])', r'\1j', s)
         
         # 8. Pattern: standalone I within numeric expressions (e.g., "0.5*I*(X + Z)")
         #    Match I that's part of a numeric expression (preceded by *, +, -, or parenthesis)
@@ -2611,12 +2613,11 @@ class TensorProduct:
                 )
             
             # Element-wise multiplication: (A⊗B) * (C⊗D) = (A*C) ⊗ (B*D)
+            # NOTE: We do NOT normalize factors here as it can change mathematical values
+            # Normalization should only be done for display purposes
             new_factors = []
             for f1, f2 in zip(self.factors, other.factors):
                 product = f1 * f2
-                # Normalize each factor
-                if hasattr(product, 'normalize'):
-                    product = product.normalize()
                 new_factors.append(product)
             
             return TensorProduct(new_factors)
@@ -3226,6 +3227,10 @@ class Algebra:
 
         For anticommutation: ω = -1 (XY = -YX)
         For general braiding: ω = exp(2πi/d) or other phase
+        
+        The relation XZ = ω ZX means that to reorder ZX → XZ,
+        we need to divide by ω (equivalently, multiply by ω^{-1}):
+        ZX = ω^{-1} XZ
         """
         # Only apply if we have a braiding phase
         if self.braid_phase is None:
@@ -3256,7 +3261,9 @@ class Algebra:
 
                         if idx_i > idx_j:  # Wrong order - need to swap
                             ops[i], ops[i+1] = ops[i+1], ops[i]
-                            coeff *= self.braid_phase  # Accumulate phase
+                            # XZ = ω ZX means ZX = ω^{-1} XZ
+                            # So we DIVIDE by braid_phase when swapping
+                            coeff /= self.braid_phase
                             changed = True
                             break
 
@@ -3519,6 +3526,9 @@ def qudit(d = 2, symbolic=True):
         )
     else:
         # Create algebra with power and braiding relations
+        # NOTE: For d > 2, X and Z are NOT Hermitian!
+        # X† = X^{d-1}, Z† = Z^{d-1}
+        # The 'unit' relation handles X^d = Z^d = I
         algebra = Algebra(
             gens=['X', 'Z'],
             rels=['unit', f'pow({d})', f'braid(exp(2*pi*I/{d}))']
@@ -7125,9 +7135,13 @@ class _NumericalProjector:
         Returns:
             YawOperator representing the symbolic expansion
         """
+        from sympy import Rational, exp, pi, I as symI
+        
         d = self.backend.d
         k = self.index
-        omega = np.exp(2j * np.pi / d)
+        
+        # Use exact symbolic omega for clean coefficients
+        omega = exp(2 * symI * pi / d)
         
         # Get the base observable (X or Z)
         if isinstance(self.observable, _NumericalOperator) and hasattr(self.observable, 'name'):
@@ -7156,25 +7170,15 @@ class _NumericalProjector:
             return result
         
         # Build the symbolic sum: (1/d) * Σ_{j=0}^{d-1} ω^{-jk} O^j
-        from sympy import Rational, exp, pi, I as symI
-        
         terms = []
         for j in range(d):
-            coeff = omega ** (-j * k)
-            # Clean up coefficient
-            if np.abs(coeff.imag) < 1e-10:
-                coeff = coeff.real
-                if np.abs(coeff - round(coeff)) < 1e-10:
-                    coeff = int(round(coeff))
-            
-            term = base_op ** j
-            if coeff != 1:
-                term = coeff * term
+            # Use exact symbolic coefficient
+            coeff = Rational(1, d) * (omega ** (-j * k))
+            term = coeff * (base_op ** j)
             terms.append(term)
         
-        # Sum and divide by d
+        # Sum the terms
         result = sum(terms)
-        result = result / d
         
         return result
     
@@ -7741,6 +7745,57 @@ def to_matrix(op):
         raise ValueError("Cannot determine dimension from operator")
     
     return _operator_to_matrix(op, d, backend)
+
+
+def conj_num(U, A):
+    """Numerical operator conjugation: U† A U.
+    
+    Computes conjugation numerically, bypassing symbolic computation.
+    This is much faster when U or A have many terms, and avoids
+    potential bugs in symbolic tensor product multiplication.
+    
+    Args:
+        U: Unitary operator (YawOperator, TensorProduct, TensorSum, etc.)
+        A: Operator to transform
+        
+    Returns:
+        _NumericalOperator with matrix U† @ A @ U
+        
+    Example:
+        >>> alg = qudit(3, symbolic=True)
+        >>> X, Z = alg.X, alg.Z
+        >>> CNOT = sum([proj(Z,k).e @ X**k for k in range(3)])
+        >>> P = proj(X, 0).e @ proj(Z, 0).e
+        >>> Pi = conj_num(CNOT, P)
+        >>> is_projector(Pi)  # True
+    """
+    # Find dimension and backend
+    d, backend = _find_dimension_and_backend(U, A)
+    
+    if d is None:
+        raise ValueError("Cannot determine dimension from operators")
+    
+    # Convert to matrices
+    mat_U = _operator_to_matrix(U, d, backend)
+    mat_A = _operator_to_matrix(A, d, backend)
+    
+    # Compute U† A U
+    mat_result = mat_U.conj().T @ mat_A @ mat_U
+    
+    # Return as numerical operator
+    result_dim = mat_result.shape[0]
+    
+    # Create a simple backend-like object if we don't have one
+    if backend is None:
+        class SimpleBackend:
+            def __init__(self, dim):
+                self.d = dim
+        backend = SimpleBackend(result_dim)
+    
+    result = _NumericalOperator(backend)
+    result._matrix = mat_result
+    
+    return result
 
 
 def _find_dimension_and_backend(op1, op2):
