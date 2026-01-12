@@ -1590,7 +1590,7 @@ class YawREPL:
         print("┓┏┏┓┓┏┏  ┏┓┃┏┓┏┓┣┓┏┓┏┓┓┏  ┓┏┏┏┓┓┏")
         print("┗┫┗┻┗┻┛  ┗┻┗┗┫┗ ┗┛┛ ┗┻┗┗  ┗┻┛┗┻┗┫")
         print(" ┛           ┛                  ┛")
-        print("Yaw: Algebraic QC w/ context management")
+        print("Yaw: Algebraic Quantum Programming")
         print("Version 0.1.1")
         print("Torsor Labs, 2026")
         print("─" * 60)
