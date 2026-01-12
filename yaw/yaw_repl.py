@@ -912,11 +912,11 @@ class YawREPL:
         )
 
         # Add current algebra if exists
-        if self.current_algebra is not None:
-            for name, op in self.current_algebra.generators.items():
+        if self.algebra is not None:
+            for name, op in self.algebra.generators.items():
                 namespace[name] = op
-            if hasattr(self.current_algebra, 'I'):
-                namespace['I'] = self.current_algebra.I
+            if hasattr(self.algebra, 'I'):
+                namespace['I'] = self.algebra.I
 
         # *** FIXED: Add user variables from all three Context dictionaries ***
         # Combine temp, global_, and user variables
@@ -1013,6 +1013,7 @@ class YawREPL:
         Examples:
             A**3 ! pow(3)
             B*A ! <A, B | anti, herm, unit>
+            X + Y ! X = 2, Y = 3
         """
         try:
             # Split on ! (only first occurrence)
@@ -1027,12 +1028,89 @@ class YawREPL:
             if context_str.startswith('<') and context_str.endswith('>'):
                 # Full algebra spec: <A, B | anti, herm, unit>
                 return self._eval_with_algebra_spec(expr_str, context_str)
+            elif self._is_bindings_context(context_str):
+                # Variable bindings: X = 2, Y = 3
+                return self._eval_with_bindings(expr_str, context_str)
             else:
                 # Single relation or comma-separated relations: pow(3), anti
                 return self._eval_with_relations(expr_str, context_str)
 
         except Exception as e:
             return f"Error in local context: {e}"
+    
+    def _is_bindings_context(self, context_str):
+        """Check if context string is variable bindings vs relations.
+        
+        Variable bindings: X = 2, Y = 3
+        Relations: pow(3), anti, E_{0,1}.d = E_{1,0}
+        
+        Heuristic: If all items are simple assignments (identifier = value),
+        it's bindings. If any item has operators/functions on LHS or is a
+        known relation keyword, it's relations.
+        """
+        if '=' not in context_str:
+            return False
+        
+        # Split by comma to get individual items
+        items = [item.strip() for item in context_str.split(',')]
+        
+        for item in items:
+            if '=' not in item:
+                # Items like 'pow(3)', 'herm' without '=' are relations, not bindings
+                return False
+            
+            lhs, _ = item.split('=', 1)
+            lhs = lhs.strip()
+            
+            # Simple identifier pattern (letters, digits, underscore only)
+            # If LHS has operators like *, ., etc., it's a relation
+            if any(op in lhs for op in ['*', '+', '-', '/', '.', '(', ')', '[', ']', '{', '}', '^', '†']):
+                return False
+        
+        return True
+    
+    def _eval_with_bindings(self, expr_str, bindings_str):
+        """Evaluate expression with local variable bindings.
+        
+        Example: X + Y ! X = 2, Y = 3
+        
+        This creates a temporary namespace where the specified variables
+        have the given values, evaluates the expression, then discards
+        the bindings.
+        """
+        # Parse bindings (comma-separated)
+        bindings = {}
+        for binding in bindings_str.split(','):
+            binding = binding.strip()
+            if '=' not in binding:
+                return f"Error: Invalid binding '{binding}' - expected format 'var = value'"
+            
+            var_name, value_str = binding.split('=', 1)
+            var_name = var_name.strip()
+            value_str = value_str.strip()
+            
+            # Evaluate the value expression
+            try:
+                value = self._eval_expr(value_str)
+                if isinstance(value, str) and value.startswith("Error"):
+                    return value
+                bindings[var_name] = value
+            except Exception as e:
+                return f"Error evaluating binding '{var_name} = {value_str}': {e}"
+        
+        # Build namespace with bindings
+        namespace = self._build_namespace()
+        namespace.update(bindings)
+        
+        # Preprocess subscripts in expression
+        expr_str = self._parse_subscripts(expr_str)
+        
+        # Evaluate expression
+        try:
+            result = eval(expr_str, namespace, namespace)
+            return result
+        except Exception as e:
+            return f"Error evaluating expression: {e}"
 
     def _eval_with_relations(self, expr_str, rels_str):
         """Evaluate expression with local relations.
@@ -1680,8 +1758,9 @@ class YawREPL:
       expr ! <A, B | relations>   # Full algebra spec
       expr ! pow(3), herm         # Just relations
 
-      Example:
-        A**3 ! pow(3)              # Evaluate A³ with pow(3) relation
+      Examples:
+        A**3 ! pow(3)              # Evaluate AÂ³ with pow(3) relation
+        X + Y ! X = 2, Y = 3        # Evaluate with temporary X=2, Y=3
 
     OPERATORS & STATES:
       Tensor product:    A @ B, psi @ phi
