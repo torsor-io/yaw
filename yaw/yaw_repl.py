@@ -1408,65 +1408,6 @@ class YawREPL:
                         undefined_str = ", ".join(f"'{x}'" for x in undefined_list)
                         return f"Error: Undefined operators {undefined_str}"
 
-            # Build namespace
-            namespace = {}
-            # Add built-in functions
-            namespace['sqrt'] = sqrt
-            namespace['len'] = len
-            namespace['sum'] = sum
-            namespace['abs'] = abs
-            namespace['max'] = max
-            namespace['min'] = min
-            namespace['range'] = range
-            namespace['enumerate'] = enumerate
-            namespace['zip'] = zip
-
-            namespace['tensor'] = tensor
-            namespace['tensor_power'] = tensor_power
-            namespace['char'] = char
-            namespace['conj_op'] = conj_op
-            namespace['conj_state'] = conj_state
-            namespace['TensorState'] = TensorState
-            namespace['OpChannel'] = OpChannel
-            namespace['opChannel'] = opChannel
-            namespace['StChannel'] = StChannel
-            namespace['stChannel'] = stChannel
-            namespace['OpMeasurement'] = OpMeasurement
-            namespace['opMeasure'] = opMeasure
-            namespace['StMeasurement'] = StMeasurement
-            namespace['stMeasure'] = stMeasure
-            namespace['CollapsedState'] = CollapsedState
-            namespace['OpBranches'] = OpBranches
-            namespace['opBranches'] = opBranches
-            namespace['StBranches'] = StBranches
-            namespace['stBranches'] = stBranches
-            namespace['compose_st_branches'] = compose_st_branches
-            namespace['compose_op_branches'] = compose_op_branches
-            namespace['QFT'] = QFT
-            namespace['qft'] = qft
-            namespace['tensor_qft'] = tensor_qft
-            namespace['proj'] = proj
-
-            
-            # Add algebra generators if defined
-            if self.algebra:
-                namespace.update(self.algebra.generators)
-                namespace['I'] = self.algebra.I
-
-            # Add user variables
-            for name in self.variables.list_vars():
-                if not name.startswith('$') and not name.startswith('_'):
-                    namespace[name] = self.variables.get(name)
-
-            # Add bare operators for anything in $gens (always)
-            dollar_gens = self.variables.get('$gens')
-            if dollar_gens:
-                for gen_name in dollar_gens:
-                    if gen_name not in namespace:
-                        # Create bare operator with no algebra (no relations)
-                        from sympy.physics.quantum import Operator
-                        bare_op = YawOperator(Operator(gen_name), algebra=None)
-                        namespace[gen_name] = bare_op
 
             # Build namespace
             namespace = self._build_namespace()
