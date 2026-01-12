@@ -1666,7 +1666,7 @@ class YawREPL:
                     if self.in_statement:
                         prompt = "... "
                     else:
-                        prompt = "yaw> "
+                        prompt = "*> "
 
                     line = input(prompt)
                         
