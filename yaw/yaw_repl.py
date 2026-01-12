@@ -1591,8 +1591,8 @@ class YawREPL:
         print("┗┫┗┻┗┻┛  ┗┻┗┗┫┗ ┗┛┛ ┗┻┗┗  ┗┻┛┗┻┗┫")
         print(" ┛           ┛                  ┛")
         print("Yaw: Algebraic QC w/ context management")
-        print("Version 0.1.0")
-        print("Torsor Labs, 2025")
+        print("Version 0.1.1")
+        print("Torsor Labs, 2026")
         print("─" * 60)
         print("Type 'help' or 'credits' for more information.")
         
