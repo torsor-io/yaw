@@ -246,6 +246,20 @@ class YawREPL:
         return any(stripped.startswith(kw + ' ') or stripped.startswith(kw + ':') 
                    for kw in statement_keywords)
 
+    def _preprocess_unicode(self, line):
+        """Replace Unicode operators with ASCII equivalents.
+        
+        Transforms:
+            « → <<  (state conjugation: A « psi)
+            » → >>  (operator conjugation: A » B)
+            
+        This allows using prettier Unicode symbols in tutorials and LaTeX
+        without triggering unwanted formatting in editors.
+        """
+        line = line.replace('«', '<<')
+        line = line.replace('»', '>>')
+        return line
+
     def _preprocess_commutators(self, line):
         """Replace [[A, B]] with comm(A, B) and {{A, B}} with acomm(A, B).
 
@@ -547,6 +561,9 @@ class YawREPL:
         import re
 
         line_stripped = line.strip()
+
+        # Preprocess Unicode operators (« → <<, » → >>)
+        line_stripped = self._preprocess_unicode(line_stripped)
 
         if line_stripped == 'help':
             return self._show_help()
