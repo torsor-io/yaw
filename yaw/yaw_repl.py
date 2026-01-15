@@ -793,11 +793,31 @@ class YawREPL:
                 return f"Error in set operation: {e}"
 
         # Pattern: Variable assignment
+        # Check if this is a top-level assignment (not inside parentheses)
         if '=' in line_stripped and not any(op in line_stripped for op in ['==', '<=', '>=']):
-            return self._assign_variable(line_stripped)
+            # Check if the = is at top level (not inside parentheses)
+            if self._is_top_level_assignment(line_stripped):
+                return self._assign_variable(line_stripped)
 
         # Pattern: Expression evaluation
         return self._eval_expr(line_stripped)
+    
+    def _is_top_level_assignment(self, line):
+        """Check if line contains a top-level assignment (= not inside parens/brackets)."""
+        depth = 0
+        for i, char in enumerate(line):
+            if char in '([':
+                depth += 1
+            elif char in ')]':
+                depth -= 1
+            elif char == '=' and depth == 0:
+                # Check it's not ==, <=, >=
+                if i > 0 and line[i-1] in '=<>!':
+                    continue
+                if i < len(line) - 1 and line[i+1] == '=':
+                    continue
+                return True
+        return False
 
     def _exec_statement(self):
         """Execute buffered multi-line statement."""
@@ -1570,7 +1590,15 @@ class YawREPL:
         """Evaluate expression with current context."""
         try:
             # FEATURE 1: Preprocess subscript notation
-            expr = self._parse_subscripts(expr)
+            expr_preprocessed = self._parse_subscripts(expr)
+            
+            # DEBUG: Print if expression changed
+            if self.verbose and expr_preprocessed != expr:
+                print(f"DEBUG: Subscript preprocessing:")
+                print(f"  Before: {expr}")
+                print(f"  After:  {expr_preprocessed}")
+            
+            expr = expr_preprocessed
             
             # Special case: Direct variable lookup for $ and _ prefixed names
             expr_stripped = expr.strip()
@@ -1653,12 +1681,15 @@ class YawREPL:
         
         IMPORTANT: Excludes identifiers that appear after a dot (attribute access),
         since those are being accessed from an object, not as bare operators.
-        Also excludes identifiers inside string literals.
+        Also excludes identifiers inside string literals and local() function calls.
 
         Returns:
             Set of generator names found in the string
         """
         import re
+
+        if self.verbose:
+            print(f"DEBUG _parse_generators_from_string: {expr_str[:80]}")
 
         # First, find and remove string literals to avoid matching identifiers inside them
         # This handles both 'single' and "double" quoted strings
@@ -1667,25 +1698,67 @@ class YawREPL:
         # Replace strings with placeholders to preserve positions
         expr_without_strings = re.sub(string_pattern, '""', expr_str)
         
-        # Use expr_without_strings for pattern matching
+        if self.verbose and expr_without_strings != expr_str:
+            print(f"  After removing strings: {expr_without_strings[:80]}")
+        
+        # Second, find and remove local() function calls
+        # We need to handle nested parentheses properly
+        # Pattern: local(...) where ... can contain nested parens
+        # Use a simpler approach: find 'local(' and match to its closing paren
+        expr_cleaned = expr_without_strings
+        
+        # Find all local( positions
+        local_pattern = r'local\s*\('
+        matches = list(re.finditer(local_pattern, expr_cleaned))
+        
+        if self.verbose and matches:
+            print(f"  Found {len(matches)} local() calls")
+        
+        # For each match, find its closing paren and mask the contents
+        replacements = []
+        for match in matches:
+            start = match.end()  # Position after 'local('
+            # Find matching closing paren
+            depth = 1
+            pos = start
+            while pos < len(expr_cleaned) and depth > 0:
+                if expr_cleaned[pos] == '(':
+                    depth += 1
+                elif expr_cleaned[pos] == ')':
+                    depth -= 1
+                pos += 1
+            
+            if depth == 0:
+                # Found matching closing paren
+                # Store the range to replace: from match.start() to pos (inclusive)
+                replacements.append((match.start(), pos))
+        
+        # Replace local(...) calls with placeholders
+        for start, end in reversed(replacements):  # Reverse to maintain positions
+            expr_cleaned = expr_cleaned[:start] + 'local()' + expr_cleaned[end:]
+        
+        if self.verbose and replacements:
+            print(f"  After masking local() calls: {expr_cleaned[:80]}")
+        
+        # Use expr_cleaned for pattern matching
         
         # First, find all attribute access patterns and mark those identifiers
         # Pattern: something.identifier (we want to exclude the identifier part)
         attr_access_pattern = r'\.([A-Za-z_][A-Za-z0-9_]*)'
-        attr_accessed = set(re.findall(attr_access_pattern, expr_without_strings))
+        attr_accessed = set(re.findall(attr_access_pattern, expr_cleaned))
         
         # Also find identifiers that are followed by a dot (these are objects, not operators)
         # Pattern: identifier.something (we want to exclude the identifier part too)
         object_pattern = r'\b([A-Za-z_][A-Za-z0-9_]*)\.'
-        objects_with_attrs = set(re.findall(object_pattern, expr_without_strings))
+        objects_with_attrs = set(re.findall(object_pattern, expr_cleaned))
         
         # Find identifiers followed by [ (these are being indexed, not used as operators)
         # Pattern: identifier[ (e.g., A[(0,1)] or list[0])
         indexing_pattern = r'\b([A-Za-z_][A-Za-z0-9_]*)\['
-        indexed_objects = set(re.findall(indexing_pattern, expr_without_strings))
+        indexed_objects = set(re.findall(indexing_pattern, expr_cleaned))
 
         # Find all identifiers (sequences of letters, digits, underscores)
-        identifiers = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', expr_without_strings)
+        identifiers = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', expr_cleaned)
 
         # Filter to keep only operator-like names
         # Exclude: built-in functions, commands, known variables
