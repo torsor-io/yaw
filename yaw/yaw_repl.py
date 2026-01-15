@@ -1018,6 +1018,7 @@ class YawREPL:
         # Generator name helpers for comprehensions
         # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
         # which with preprocessing becomes: gens = [E_{a,b} for ...]
+        namespace['GenFam'] = GenFam  # The class itself
         namespace['E'] = GenFam('E')
         namespace['F'] = GenFam('F')
         namespace['G'] = GenFam('G')
@@ -1523,24 +1524,39 @@ class YawREPL:
         
         IMPORTANT: Excludes identifiers that appear after a dot (attribute access),
         since those are being accessed from an object, not as bare operators.
+        Also excludes identifiers inside string literals.
 
         Returns:
             Set of generator names found in the string
         """
         import re
 
+        # First, find and remove string literals to avoid matching identifiers inside them
+        # This handles both 'single' and "double" quoted strings
+        string_pattern = r'''('[^']*'|"[^"]*")'''
+        
+        # Replace strings with placeholders to preserve positions
+        expr_without_strings = re.sub(string_pattern, '""', expr_str)
+        
+        # Use expr_without_strings for pattern matching
+        
         # First, find all attribute access patterns and mark those identifiers
         # Pattern: something.identifier (we want to exclude the identifier part)
         attr_access_pattern = r'\.([A-Za-z_][A-Za-z0-9_]*)'
-        attr_accessed = set(re.findall(attr_access_pattern, expr_str))
+        attr_accessed = set(re.findall(attr_access_pattern, expr_without_strings))
         
         # Also find identifiers that are followed by a dot (these are objects, not operators)
         # Pattern: identifier.something (we want to exclude the identifier part too)
         object_pattern = r'\b([A-Za-z_][A-Za-z0-9_]*)\.'
-        objects_with_attrs = set(re.findall(object_pattern, expr_str))
+        objects_with_attrs = set(re.findall(object_pattern, expr_without_strings))
+        
+        # Find identifiers followed by [ (these are being indexed, not used as operators)
+        # Pattern: identifier[ (e.g., A[(0,1)] or list[0])
+        indexing_pattern = r'\b([A-Za-z_][A-Za-z0-9_]*)\['
+        indexed_objects = set(re.findall(indexing_pattern, expr_without_strings))
 
         # Find all identifiers (sequences of letters, digits, underscores)
-        identifiers = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', expr_str)
+        identifiers = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', expr_without_strings)
 
         # Filter to keep only operator-like names
         # Exclude: built-in functions, commands, known variables
@@ -1555,7 +1571,8 @@ class YawREPL:
             'compose_st_branches', 'compose_op_branches', 'QFT', 'qft', 'tensor_qft',
             'proj', 'ctrl', 'ctrl_single', 'type', 'list', 'dict', 'set',
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
-            'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed'
+            'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
+            'GenFam', 'E', 'F', 'G'  # Generator family helpers
         }
 
         gens = set()
@@ -1574,6 +1591,10 @@ class YawREPL:
             
             # Skip objects that have attribute access (e.g., alg1 in alg1.X)
             if name in objects_with_attrs:
+                continue
+            
+            # Skip objects being indexed (e.g., A in A[(0,1)] or list in list[0])
+            if name in indexed_objects:
                 continue
 
             # Skip lowercase function-like names (heuristic: likely functions)
@@ -1788,6 +1809,10 @@ class YawREPL:
     SUBSCRIPT NOTATION:
       P_{k}              Subscripted variables (k evaluated)
       [P_{k} = expr for k in range(3)]   # Create P_0, P_1, P_2
+      
+      GenFam('A')        Generator family helper
+      A = GenFam('A')    # Create family, then use A[(i,j)] → 'A_{i,j}'
+      [A[(i,j)] for i in range(2) for j in range(2)]  # Create A_{0,0}, A_{0,1}, etc.
 
     KEY FUNCTIONS:
       States:
