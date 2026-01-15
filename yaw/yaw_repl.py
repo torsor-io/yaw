@@ -1015,6 +1015,68 @@ class YawREPL:
         namespace['is_unitary'] = is_unitary
         namespace['is_hermitian'] = is_hermitian
         
+        # Local context helper for use inside functions
+        # Allows: local(expr, Z=I, X=something) instead of (expr ! Z = I, X = something)
+        def local(expr, **bindings):
+            """Evaluate expression with local variable bindings.
+            
+            Usage inside functions:
+                def equiv(A):
+                    return local(A, Z=I)
+            
+            This is equivalent to the REPL syntax: A ! Z = I
+            
+            For operators, this performs substitution of generators.
+            For other expressions, this evaluates with temporary variable bindings.
+            """
+            from yaw_prototype import YawOperator
+            import sympy
+            
+            # If expr is a YawOperator, substitute generators
+            if isinstance(expr, YawOperator):
+                # Get the symbolic expression
+                expr_sympy = expr._expr
+                
+                # Build substitution dict: generator symbol -> replacement expression
+                subs_dict = {}
+                for name, value in bindings.items():
+                    # Convert generator name to SymPy symbol for substitution
+                    from sympy.physics.quantum import Operator
+                    gen_symbol = Operator(name)
+                    
+                    # The binding value should be an operator
+                    if isinstance(value, YawOperator):
+                        subs_dict[gen_symbol] = value._expr
+                    else:
+                        # Try to convert to sympy expression
+                        subs_dict[gen_symbol] = value
+                
+                # Perform substitution
+                new_expr = expr_sympy.subs(subs_dict)
+                
+                # Create new YawOperator with the algebra (use the expr's algebra if available)
+                algebra = expr.algebra if hasattr(expr, 'algebra') else None
+                result = YawOperator(new_expr, algebra)
+                
+                # Normalize using the algebra
+                if algebra:
+                    return algebra.normalize(result, force=True)
+                else:
+                    return result
+            
+            # For string expressions, evaluate with bindings
+            elif isinstance(expr, str):
+                # Build namespace with current context + bindings  
+                eval_namespace = dict(namespace)
+                eval_namespace.update(bindings)
+                result = eval(expr, eval_namespace)
+                return result
+            
+            # Otherwise just return as-is
+            return expr
+        
+        namespace['local'] = local
+        
         # Generator name helpers for comprehensions
         # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
         # which with preprocessing becomes: gens = [E_{a,b} for ...]
@@ -1834,6 +1896,12 @@ class YawREPL:
         stMeasure([K0, K1], psi)   Single-shot state measurement
         opBranches([K0, K1], psi)  All branches (operator)
         stBranches([K0, K1], psi)  All branches (state)
+      
+      Local Context (for functions):
+        local(expr, **bindings)    Evaluate expr with variable bindings
+        Example in function:
+          def equiv(A):
+              return local(A, Z=I)   # Equivalent to (A ! Z = I) at REPL
 
     CONTEXT VARIABLES:
       _gens, _rels       Ephemeral (reset with each expression)
