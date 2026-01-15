@@ -1077,6 +1077,73 @@ class YawREPL:
         
         namespace['local'] = local
         
+        # Numerical evaluation shortcut
+        def N(expr, precision=15):
+            """Numerically evaluate expression.
+            
+            Usage:
+                N(expr)              # Evaluate to ~15 decimal places
+                N(expr, precision=6) # Evaluate to 6 decimal places
+            
+            This is a shortcut for complex(expr._expr.evalf()).
+            Returns a Python complex number (or float if imaginary part is 0).
+            
+            Examples:
+                *> mySum = local(sum(w**k for k in range(10)), w=exp(2*I*pi/10))
+                *> N(mySum)
+                0.0
+            """
+            from yaw_prototype import YawOperator
+            
+            # Handle YawOperator
+            if isinstance(expr, YawOperator):
+                # Get the underlying SymPy expression
+                sympy_expr = expr._expr
+                # Evaluate it numerically
+                evaled = sympy_expr.evalf(precision)
+                # Try to convert to complex
+                try:
+                    result = complex(evaled)
+                except (TypeError, ValueError):
+                    # If it can't be converted to complex, just return the evaled expression
+                    return evaled
+            # Handle SymPy expressions that have .evalf()
+            elif hasattr(expr, 'evalf'):
+                try:
+                    evaled = expr.evalf(precision)
+                    result = complex(evaled)
+                except (TypeError, ValueError):
+                    return evaled
+            # Handle regular numbers
+            elif isinstance(expr, (int, float, complex)):
+                return expr
+            else:
+                # Try to convert directly
+                try:
+                    return complex(expr)
+                except:
+                    return expr
+            
+            # Clean up the result
+            # Round very small values to exactly 0
+            threshold = 10**(-precision + 2)
+            
+            real_part = result.real
+            imag_part = result.imag
+            
+            if abs(real_part) < threshold:
+                real_part = 0.0
+            if abs(imag_part) < threshold:
+                imag_part = 0.0
+            
+            # Return float if imaginary part is 0, otherwise complex
+            if imag_part == 0:
+                return real_part
+            else:
+                return complex(real_part, imag_part)
+        
+        namespace['N'] = N
+        
         # Generator name helpers for comprehensions
         # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
         # which with preprocessing becomes: gens = [E_{a,b} for ...]
@@ -1634,7 +1701,8 @@ class YawREPL:
             'proj', 'ctrl', 'ctrl_single', 'type', 'list', 'dict', 'set',
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
             'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
-            'GenFam', 'E', 'F', 'G'  # Generator family helpers
+            'GenFam', 'E', 'F', 'G',  # Generator family helpers
+            'local', 'N'  # Helper functions
         }
 
         gens = set()
@@ -1902,6 +1970,13 @@ class YawREPL:
         Example in function:
           def equiv(A):
               return local(A, Z=I)   # Equivalent to (A ! Z = I) at REPL
+      
+      Numerical Evaluation:
+        N(expr)                    Numerically evaluate expression
+        N(expr, precision=6)       Evaluate to 6 decimal places
+        Example:
+          mySum = local(sum(w**k for k in range(10)), w=exp(2*I*pi/10))
+          N(mySum)                 # Returns 0.0 (very small number cleaned to 0)
 
     CONTEXT VARIABLES:
       _gens, _rels       Ephemeral (reset with each expression)
