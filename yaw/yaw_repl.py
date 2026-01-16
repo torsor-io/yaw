@@ -1244,6 +1244,8 @@ class YawREPL:
         This creates a temporary namespace where the specified variables
         have the given values, evaluates the expression, then discards
         the bindings.
+        
+        For YawOperators, performs actual substitution using local().
         """
         # Parse bindings (comma-separated)
         bindings = {}
@@ -1265,7 +1267,26 @@ class YawREPL:
             except Exception as e:
                 return f"Error evaluating binding '{var_name} = {value_str}': {e}"
         
-        # Build namespace with bindings
+        # First, try to evaluate the expression
+        expr_result = self._eval_expr(expr_str)
+        
+        # If result is an error, return it
+        if isinstance(expr_result, str) and expr_result.startswith("Error"):
+            return expr_result
+        
+        # If the result is a YawOperator, use local() for substitution
+        from yaw_prototype import YawOperator
+        if isinstance(expr_result, YawOperator):
+            # Use local() function from namespace
+            namespace = self._build_namespace()
+            local_func = namespace['local']
+            try:
+                result = local_func(expr_result, **bindings)
+                return result
+            except Exception as e:
+                return f"Error applying bindings: {e}"
+        
+        # Otherwise, build namespace with bindings and evaluate
         namespace = self._build_namespace()
         namespace.update(bindings)
         
