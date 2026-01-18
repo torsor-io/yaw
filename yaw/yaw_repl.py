@@ -994,6 +994,58 @@ class YawREPL:
         # Random module for classical randomness
         import random
         namespace['random'] = random
+        
+        # Math module for mathematical functions
+        import math
+        namespace['math'] = math
+        
+        # Helper functions for GCD and LCM of sets
+        def gcd(*args):
+            """Compute GCD of multiple numbers.
+            
+            Examples:
+                gcd(12, 18, 24) → 6
+                gcd(*[12, 18, 24]) → 6
+                gcd(10, 15, 20, 25) → 5
+            """
+            from math import gcd as _gcd
+            from functools import reduce
+            if len(args) == 0:
+                raise ValueError("gcd requires at least one argument")
+            if len(args) == 1:
+                # Handle single list/sequence argument
+                if hasattr(args[0], '__iter__'):
+                    args = list(args[0])
+                else:
+                    return args[0]
+            return reduce(_gcd, args)
+        
+        def lcm(*args):
+            """Compute LCM of multiple numbers.
+            
+            Examples:
+                lcm(4, 6, 8) → 24
+                lcm(*[4, 6, 8]) → 24
+                lcm(3, 5, 7) → 105
+            """
+            from math import gcd as _gcd
+            from functools import reduce
+            
+            def _lcm(a, b):
+                return abs(a * b) // _gcd(a, b) if a and b else 0
+            
+            if len(args) == 0:
+                raise ValueError("lcm requires at least one argument")
+            if len(args) == 1:
+                # Handle single list/sequence argument
+                if hasattr(args[0], '__iter__'):
+                    args = list(args[0])
+                else:
+                    return args[0]
+            return reduce(_lcm, args)
+        
+        namespace['gcd'] = gcd
+        namespace['lcm'] = lcm
 
         # Yaw functions
         namespace['tensor'] = tensor
@@ -2135,6 +2187,19 @@ class YawREPL:
           k = random.randint(0, d-1)
           prob = random.random()
           [random.choice([0,1]) for _ in range(10)]
+      
+      Number Theory:
+        gcd(a, b, c, ...)          Greatest common divisor
+        gcd([12, 18, 24])          GCD of a list (returns 6)
+        lcm(a, b, c, ...)          Least common multiple
+        lcm([4, 6, 8])             LCM of a list (returns 24)
+        math.floor(x)              Floor function
+        math.ceil(x)               Ceiling function
+        math.factorial(n)          Factorial n!
+        Example:
+          # Find period from measurements
+          measurements = [0, 3, 0, 3, 6]
+          period = d // gcd(*measurements)  # d = dimension
 
     CONTEXT VARIABLES:
       _gens, _rels       Ephemeral (reset with each expression)
