@@ -990,6 +990,10 @@ class YawREPL:
         namespace['None'] = None
         namespace['True'] = True
         namespace['False'] = False
+        
+        # Random module for classical randomness
+        import random
+        namespace['random'] = random
 
         # Yaw functions
         namespace['tensor'] = tensor
@@ -1840,7 +1844,7 @@ class YawREPL:
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
             'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
             'GenFam', 'E', 'F', 'G',  # Generator family helpers
-            'local', 'N', 'isclose'  # Helper functions
+            'local', 'N', 'isclose', 'random'  # Helper functions and modules
         }
 
         gens = set()
@@ -2121,6 +2125,16 @@ class YawREPL:
         isclose(a, b, rtol=1e-5)   Custom relative tolerance
         Example:
           [isclose(f(k), f(k+p)) for k in range(d-p)]  # All True
+      
+      Classical Randomness:
+        random.random()            Random float in [0.0, 1.0)
+        random.randint(a, b)       Random integer in [a, b]
+        random.choice(seq)         Random element from sequence
+        random.shuffle(list)       Shuffle list in place
+        Example:
+          k = random.randint(0, d-1)
+          prob = random.random()
+          [random.choice([0,1]) for _ in range(10)]
 
     CONTEXT VARIABLES:
       _gens, _rels       Ephemeral (reset with each expression)
