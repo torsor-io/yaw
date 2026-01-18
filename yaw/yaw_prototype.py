@@ -6037,51 +6037,56 @@ class QFT:
         # ====================================================================
         # NUMERICAL BACKEND: Handle numerical eigenstates
         # ====================================================================
-        if self.is_numerical:
-            # Handle numerical eigenstates
-            if isinstance(state, _NumericalEigenState):
-                # Apply QFT matrix to state vector
+        # Check for _NumericalEigenState first, regardless of self.is_numerical
+        if isinstance(state, _NumericalEigenState):
+            # Get backend from state or from self
+            if hasattr(state, 'backend'):
+                backend = state.backend
+            elif self.is_numerical:
                 backend = self.backend
-                H = backend.H
-                
-                # Create new state with transformed vector
-                new_vec = H @ state._vector
-                
-                # Return a new _NumericalEigenState-like object
-                # We need to create a custom state wrapper for transformed states
-                class _TransformedNumericalState:
-                    """Temporary wrapper for QFT-transformed numerical states"""
-                    def __init__(self, vector, backend):
-                        self._vector = vector
-                        self.backend = backend
-                    
-                    def expect(self, operator):
-                        """Compute expectation value: ⟨ψ|O|ψ⟩."""
-                        if isinstance(operator, _NumericalOperator):
-                            val = self._vector.conj() @ operator._matrix @ self._vector
-                            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
-                        elif isinstance(operator, YawOperator):
-                            op_num = _yaw_to_numerical(operator, self.backend)
-                            val = self._vector.conj() @ op_num._matrix @ self._vector
-                            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
-                        else:
-                            raise NotImplementedError(f"Cannot compute expect with {type(operator)}")
-                    
-                    def __ror__(self, operator):
-                        """Enable operator | state syntax."""
-                        return self.expect(operator)
-                    
-                    def __call__(self, operator):
-                        """Enable state(operator) syntax."""
-                        return self.expect(operator)
-                    
-                    def __repr__(self):
-                        return f"qft_state"
-                
-                return _TransformedNumericalState(new_vec, backend)
+            else:
+                raise ValueError("No numerical backend available for QFT on numerical state")
             
-            elif isinstance(state, State):
-                # For general states, use TransformedState
+            # Apply QFT matrix to state vector
+            H = backend.H
+            new_vec = H @ state._vector
+            
+            # Return a new state wrapper
+            class _TransformedNumericalState:
+                """Temporary wrapper for QFT-transformed numerical states"""
+                def __init__(self, vector, backend):
+                    self._vector = vector
+                    self.backend = backend
+                
+                def expect(self, operator):
+                    """Compute expectation value: ⟨ψ|O|ψ⟩."""
+                    if isinstance(operator, _NumericalOperator):
+                        val = self._vector.conj() @ operator._matrix @ self._vector
+                        return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+                    elif isinstance(operator, YawOperator):
+                        op_num = _yaw_to_numerical(operator, self.backend)
+                        val = self._vector.conj() @ op_num._matrix @ self._vector
+                        return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+                    else:
+                        raise NotImplementedError(f"Cannot compute expect with {type(operator)}")
+                
+                def __ror__(self, operator):
+                    """Enable operator | state syntax."""
+                    return self.expect(operator)
+                
+                def __call__(self, operator):
+                    """Enable state(operator) syntax."""
+                    return self.expect(operator)
+                
+                def __repr__(self):
+                    return f"qft_state"
+            
+            return _TransformedNumericalState(new_vec, backend)
+        
+        # Handle other State objects
+        elif isinstance(state, State):
+            if self.is_numerical:
+                # Numerical QFT on symbolic state
                 def transform_fn(A):
                     """Transform operator: ψ(H† A H)"""
                     if isinstance(A, _NumericalOperator):
@@ -6094,19 +6099,18 @@ class QFT:
                         return state(self >> A)
                 
                 return TransformedState(transform_fn)
+            else:
+                # Symbolic QFT on symbolic state
+                def transform_fn(A):
+                    return state(self >> A)
+                
+                return TransformedState(transform_fn)
         # ====================================================================
         
-        # Symbolic mode
-        if isinstance(state, State):
-            # Create transformed state: (W << ψ)(A) = ψ(W† A W) = ψ(W >> A)
-            def transform_fn(A):
-                return state(self >> A)
-            
-            return TransformedState(transform_fn)
         else:
             raise TypeError(
                 f"Cannot apply QFT to {type(state).__name__}. "
-                "Expected a State object."
+                "Expected a State or _NumericalEigenState object."
             )
     
     def adjoint(self):
