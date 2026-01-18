@@ -3501,7 +3501,7 @@ class Algebra:
         """Alias for braid_phase (backward compatibility)."""
         return self.braid_phase
 
-def qudit(d = 2, symbolic=False):
+def qudit(d = 2, symbolic=True):
     """Create d-level qudit algebra.
     
     For Pd-level systems, generators satisfy:
