@@ -6022,6 +6022,93 @@ class QFT:
         """Enable W >> A syntax."""
         return self.conj_op(operator)
     
+    def __lshift__(self, state):
+        """Apply QFT to state: W << ψ
+        
+        For numerical states, applies the QFT matrix directly.
+        For symbolic states, uses the transformation (W << ψ)(A) = ψ(W† A W).
+        
+        Args:
+            state: State to transform
+            
+        Returns:
+            Transformed state
+        """
+        # ====================================================================
+        # NUMERICAL BACKEND: Handle numerical eigenstates
+        # ====================================================================
+        if self.is_numerical:
+            # Handle numerical eigenstates
+            if isinstance(state, _NumericalEigenState):
+                # Apply QFT matrix to state vector
+                backend = self.backend
+                H = backend.H
+                
+                # Create new state with transformed vector
+                new_vec = H @ state._vector
+                
+                # Return a new _NumericalEigenState-like object
+                # We need to create a custom state wrapper for transformed states
+                class _TransformedNumericalState:
+                    """Temporary wrapper for QFT-transformed numerical states"""
+                    def __init__(self, vector, backend):
+                        self._vector = vector
+                        self.backend = backend
+                    
+                    def expect(self, operator):
+                        """Compute expectation value: ⟨ψ|O|ψ⟩."""
+                        if isinstance(operator, _NumericalOperator):
+                            val = self._vector.conj() @ operator._matrix @ self._vector
+                            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+                        elif isinstance(operator, YawOperator):
+                            op_num = _yaw_to_numerical(operator, self.backend)
+                            val = self._vector.conj() @ op_num._matrix @ self._vector
+                            return np.real(val) if np.abs(np.imag(val)) < 1e-10 else val
+                        else:
+                            raise NotImplementedError(f"Cannot compute expect with {type(operator)}")
+                    
+                    def __ror__(self, operator):
+                        """Enable operator | state syntax."""
+                        return self.expect(operator)
+                    
+                    def __call__(self, operator):
+                        """Enable state(operator) syntax."""
+                        return self.expect(operator)
+                    
+                    def __repr__(self):
+                        return f"qft_state"
+                
+                return _TransformedNumericalState(new_vec, backend)
+            
+            elif isinstance(state, State):
+                # For general states, use TransformedState
+                def transform_fn(A):
+                    """Transform operator: ψ(H† A H)"""
+                    if isinstance(A, _NumericalOperator):
+                        H = self.backend.H
+                        H_dag = H.conj().T
+                        transformed = _NumericalOperator(self.backend)
+                        transformed._matrix = H_dag @ A._matrix @ H
+                        return state(transformed)
+                    else:
+                        return state(self >> A)
+                
+                return TransformedState(transform_fn)
+        # ====================================================================
+        
+        # Symbolic mode
+        if isinstance(state, State):
+            # Create transformed state: (W << ψ)(A) = ψ(W† A W) = ψ(W >> A)
+            def transform_fn(A):
+                return state(self >> A)
+            
+            return TransformedState(transform_fn)
+        else:
+            raise TypeError(
+                f"Cannot apply QFT to {type(state).__name__}. "
+                "Expected a State object."
+            )
+    
     def adjoint(self):
         """QFT is self-adjoint (up to phase): W† = W^(d-1)
         
