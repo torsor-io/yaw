@@ -1164,6 +1164,50 @@ class YawREPL:
         
         namespace['N'] = N
         
+        # Tolerance-based equality for numerical comparisons
+        def isclose(a, b, rtol=1e-09, atol=1e-12):
+            """Check if two values are approximately equal.
+            
+            Uses numpy.isclose() under the hood for element-wise comparison.
+            Works with scalars, arrays, and yaw objects.
+            
+            Parameters:
+                a, b: Values to compare
+                rtol: Relative tolerance (default: 1e-09)
+                atol: Absolute tolerance (default: 1e-12)
+            
+            Returns:
+                Boolean or array of booleans
+            
+            Examples:
+                *> isclose(1.0, 1.0000000000000002)
+                True
+                
+                *> [isclose(f(k), f(k+p)) for k in range(d-p)]
+                [True, True, True, True]
+            """
+            import numpy as np
+            from yaw_prototype import State, YawOperator
+            
+            # Extract numerical values if they're yaw objects
+            if isinstance(a, State):
+                a = a.val
+            if isinstance(b, State):
+                b = b.val
+            if isinstance(a, YawOperator):
+                # For operators, compare matrix representations if possible
+                if hasattr(a, 'matrix') and hasattr(b, 'matrix'):
+                    a = a.matrix()
+                    b = b.matrix()
+                else:
+                    # Fall back to expression comparison
+                    return a == b
+            
+            # Use numpy's isclose for numerical comparison
+            return np.isclose(a, b, rtol=rtol, atol=atol)
+        
+        namespace['isclose'] = isclose
+        
         # Generator name helpers for comprehensions
         # These enable syntax like: gens = [E[(a,b)] for a in range(3) for b in range(3)]
         # which with preprocessing becomes: gens = [E_{a,b} for ...]
@@ -1796,7 +1840,7 @@ class YawREPL:
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
             'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
             'GenFam', 'E', 'F', 'G',  # Generator family helpers
-            'local', 'N'  # Helper functions
+            'local', 'N', 'isclose'  # Helper functions
         }
 
         gens = set()
@@ -2071,6 +2115,12 @@ class YawREPL:
         Example:
           mySum = local(sum(w**k for k in range(10)), w=exp(2*I*pi/10))
           N(mySum)                 # Returns 0.0 (very small number cleaned to 0)
+      
+      Tolerance-Based Comparison:
+        isclose(a, b)              Check if a ≈ b (within tolerance)
+        isclose(a, b, rtol=1e-5)   Custom relative tolerance
+        Example:
+          [isclose(f(k), f(k+p)) for k in range(d-p)]  # All True
 
     CONTEXT VARIABLES:
       _gens, _rels       Ephemeral (reset with each expression)
