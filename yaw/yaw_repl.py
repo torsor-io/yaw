@@ -247,17 +247,10 @@ class YawREPL:
                    for kw in statement_keywords)
 
     def _preprocess_unicode(self, line):
-        """Replace Unicode operators with ASCII equivalents.
-        
-        Transforms:
-            « → <<  (state conjugation: A « psi)
-            » → >>  (operator conjugation: A » B)
-            
-        This allows using prettier Unicode symbols in tutorials and LaTeX
-        without triggering unwanted formatting in editors.
-        """
-        line = line.replace('«', '<<')
-        line = line.replace('»', '>>')
+        """Replace Unicode operators with ASCII equivalents."""
+        # Handle Unicode angle quotes: « → <<, » → >>
+        line = line.replace('«', '<<')  # U+00AB LEFT-POINTING DOUBLE ANGLE QUOTATION MARK
+        line = line.replace('»', '>>')  # U+00BB RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
         return line
 
     def _preprocess_commutators(self, line):
@@ -829,6 +822,9 @@ class YawREPL:
         
         # Preprocess: Replace $alg = ... with alg = ... and inject I, X, Z
         full_statement = self._preprocess_alg_assignments(full_statement)
+        
+        # Preprocess: Convert Unicode arrows to Python operators
+        full_statement = self._preprocess_unicode_operators(full_statement)
 
         # Build namespace
         namespace = self._build_namespace()
@@ -926,6 +922,22 @@ class YawREPL:
         # Replace all $alg assignments
         result = re.sub(pattern, replace_alg, code)
         return result
+    
+    def _preprocess_unicode_operators(self, code):
+        """Convert Unicode arrow operators to Python operators.
+        
+        Replaces:
+            » (U+00BB) → >>
+            « (U+00AB) → <<
+        
+        This allows users to copy-paste code with nice-looking arrows
+        from PDFs or documents without getting syntax errors.
+        """
+        # Replace Unicode right arrow with >>
+        code = code.replace('»', '>>')
+        # Replace Unicode left arrow with <<
+        code = code.replace('«', '<<')
+        return code
     
     def _build_namespace(self):
         """Build namespace for eval/exec (extracted for reuse)."""
@@ -1896,7 +1908,7 @@ class YawREPL:
             'Encoding', 'None', 'True', 'False', 'rep', 'comm', 'acomm',
             'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
             'GenFam', 'E', 'F', 'G',  # Generator family helpers
-            'local', 'N', 'isclose', 'random'  # Helper functions and modules
+            'local', 'N', 'isclose', 'random', 'math', 'gcd', 'lcm'  # Helper functions and modules
         }
 
         gens = set()
