@@ -140,7 +140,7 @@ __all__ = [
     'OpMeasurement', 'opMeasure', 'StMeasurement', 'stMeasure',
     'OpBranches', 'opBranches', 'StBranches', 'stBranches',
     'compose_st_branches', 'compose_op_branches',
-    'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
+    'wire', 'WireSpec', 'tensor', 'tensor_power', 'char', 'conj_op', 'conj_state',
     'QFT', 'qft', 'tensor_qft', 'proj', 'proj_general', 'ctrl', 'ctrl_spectral', 'ctrl_single',
     'Projector', 'proj_algebraic', 'qubit', 'Encoding', 'rep',
     'norm', 'measure',  # Fourier sampling convenience functions
@@ -1511,6 +1511,35 @@ class YawOperator:
         # Algebraic implementation: U << φ = U† % (U // φ)
         # This computes: (U << φ)(A) = φ(U† A U)
         return self.adjoint() % (self // state)
+
+
+    def __getitem__(self, index):
+        """Indexed tensor product: wire placement syntax.
+
+        op[k, n]  -  embed op at wire k in n-wire system (0-indexed); returns TensorProduct.
+        op[k]     -  lazy placement; returns WireSpec, resolved later via op[k](n).
+
+        This is algebraically natural: op occupies one factor in a tensor product
+        of the algebra's identity operators, with op replacing the k-th identity.
+
+        Equivalent to wire(op, k, n).
+
+        Examples:
+            X[1, 3]          # I @ X @ I  (explicit, 3-wire)
+            X[0, 2]          # X @ I      (explicit, 2-wire)
+            X[2]             # WireSpec (lazy)
+            X[2](3)          # I @ I @ X  (lazy, then resolved)
+            (X[0] * Z[2])(3) # X @ I @ Z  (composed WireSpecs, resolved)
+            (X[1] * Z[1])(2) # (X*Z) @ I  (same wire: algebraic product)
+        """
+        if isinstance(index, tuple):
+            if len(index) == 2:
+                k, n = index
+                return wire(self, k, n)
+            raise IndexError(
+                f"Wire indexing expects op[k] or op[k, n], got {len(index)} indices"
+            )
+        return WireSpec.single(self, index)
 
 # ============================================================================
 # COMMUTATORS AND ANTICOMMUTATORS
@@ -7027,6 +7056,166 @@ def tensor_power(op, n):
     """
     return TensorProduct(*[op for _ in range(n)])
 
+
+# ============================================================================
+# INDEXED TENSOR PRODUCT: Wire Placement
+# ============================================================================
+
+class WireSpec:
+    """Lazy operator placement on a specific wire.
+
+    Created by the op[k] syntax. Defers specifying the total number of wires,
+    allowing multiple placements to be composed before resolution.
+
+    The key insight is algebraic: op[k] records *which* wire the operator acts
+    on, and resolves to the full tensor product I @ ... @ op @ ... @ I only
+    when the total wire count n is known.
+
+    Usage:
+        X[1]             # WireSpec: X on wire 1 (0-indexed)
+        X[1](3)          # Resolve: I @ X @ I  (3-wire system)
+        X[1]             # Auto-infer n=2: I @ X (max wire index + 1)
+        X[0] * Z[2]      # Compose: X on wire 0, Z on wire 2
+        (X[0] * Z[2])(3) # Resolve: X @ I @ Z
+
+    When multiple operators are placed on the same wire, they multiply
+    algebraically before embedding:
+        (X[0] * Z[0])(2)  ->  (X*Z) @ I
+    """
+
+    def __init__(self, placements):
+        """Initialize with list of (op, wire_index) pairs.
+
+        Args:
+            placements: list of (operator, wire_index) tuples
+        """
+        self._placements = list(placements)
+
+    @classmethod
+    def single(cls, op, k):
+        """Create WireSpec from a single (op, k) placement."""
+        if not isinstance(k, int):
+            raise TypeError(f"Wire index must be an integer, got {type(k).__name__}")
+        if k < 0:
+            raise ValueError(f"Wire index must be non-negative, got {k}")
+        return cls([(op, k)])
+
+    def __call__(self, n=None):
+        """Resolve to an explicit tensor product.
+
+        Args:
+            n: Total number of wires. If None, inferred as max_wire_index + 1.
+
+        Returns:
+            Single operator if n=1, TensorProduct otherwise.
+
+        Example:
+            X[1](3)         # I @ X @ I
+            (X[0] * Z[2])() # X @ I @ Z  (n=3 inferred from max index 2)
+        """
+        if n is None:
+            n = max(k for _, k in self._placements) + 1
+
+        if not isinstance(n, int) or n < 1:
+            raise ValueError(f"Number of wires n must be a positive integer, got {n}")
+
+        for _, k in self._placements:
+            if k < 0 or k >= n:
+                raise ValueError(f"Wire index {k} out of range [0, {n-1}]")
+
+        first_op = self._placements[0][0]
+        if not hasattr(first_op, 'algebra') or first_op.algebra is None:
+            raise ValueError("Operator must have an associated algebra to resolve WireSpec")
+
+        I = first_op.algebra.I
+        factors = [I] * n
+
+        for op, k in self._placements:
+            if factors[k] is I:
+                factors[k] = op
+            else:
+                # Multiple ops on the same wire: algebraic (matrix) product
+                factors[k] = factors[k] * op
+
+        if n == 1:
+            return factors[0]
+
+        # Chain tensor product via @ (works for both YawOperator and _NumericalOperator)
+        result = factors[0]
+        for f in factors[1:]:
+            result = result @ f
+        return result
+
+    def __mul__(self, other):
+        """Compose two WireSpecs: X[0] * Z[2]  ->  joint placement."""
+        if isinstance(other, WireSpec):
+            return WireSpec(self._placements + other._placements)
+        return NotImplemented
+
+    def __rmul__(self, other):
+        """Right-compose WireSpecs."""
+        if isinstance(other, WireSpec):
+            return WireSpec(other._placements + self._placements)
+        return NotImplemented
+
+    def __repr__(self):
+        parts = [f"{op}[{k}]" for op, k in self._placements]
+        return " * ".join(parts)
+
+
+def wire(op, k, n):
+    """Embed operator op at wire k in an n-wire tensor product (0-indexed).
+
+    Returns:  I @ ... @ I @ op @ I @ ... @ I
+    where op occupies position k (0-indexed), identity fills the rest.
+
+    This is the fundamental indexed tensor product. The three equivalent forms are:
+        wire(X, 1, 3)  <->  X[1, 3]  <->  X[1](3)
+
+    Args:
+        op: Operator to embed (YawOperator or _NumericalOperator)
+        k:  Wire index, 0-indexed, in range [0, n-1]
+        n:  Total number of wires
+
+    Returns:
+        op itself if n=1, otherwise TensorProduct with op at position k.
+
+    Examples:
+        wire(X, 0, 3)  # X @ I @ I
+        wire(X, 1, 3)  # I @ X @ I
+        wire(X, 2, 3)  # I @ I @ X
+
+        X[1, 3]        # syntactic sugar for wire(X, 1, 3)
+        X[1](3)        # via WireSpec (same result)
+
+    Note:
+        Indices are 0-based. wire(X, 1, 3) puts X on the *second* wire.
+        The algebra's identity operator fills the remaining wires.
+    """
+    if not hasattr(op, 'algebra') or op.algebra is None:
+        raise ValueError("Operator must have an associated algebra to use wire()")
+    if not isinstance(k, int) or not isinstance(n, int):
+        raise TypeError(
+            f"Wire indices must be integers, got k={type(k).__name__}, n={type(n).__name__}"
+        )
+    if n < 1:
+        raise ValueError(f"Number of wires n must be >= 1, got {n}")
+    if k < 0 or k >= n:
+        raise ValueError(f"Wire index k={k} out of range [0, {n-1}]")
+
+    I = op.algebra.I
+    factors = [I] * n
+    factors[k] = op
+
+    if n == 1:
+        return op
+
+    # Chain tensor product via @ (handles both YawOperator and _NumericalOperator)
+    result = factors[0]
+    for f in factors[1:]:
+        result = result @ f
+    return result
+
 # ============================================================================
 # NUMERICAL QUDIT BACKEND: Wrapper Classes
 # ============================================================================
@@ -7544,6 +7733,17 @@ class _NumericalOperator:
         else:
             raise TypeError(f"Cannot tensor _NumericalOperator with {type(other)}")
     
+    def __getitem__(self, index):
+        """Indexed tensor product: wire placement syntax. See YawOperator.__getitem__."""
+        if isinstance(index, tuple):
+            if len(index) == 2:
+                k, n = index
+                return wire(self, k, n)
+            raise IndexError(
+                f"Wire indexing expects op[k] or op[k, n], got {len(index)} indices"
+            )
+        return WireSpec.single(self, index)
+
     def __repr__(self):
         # Check if this is the identity matrix
         identity = np.eye(self.backend.d, dtype=complex)
