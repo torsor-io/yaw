@@ -1616,6 +1616,13 @@ class TensorSum:
                 flattened.append(term)
         self.terms = flattened
         
+        # Infer algebra from first term (similar to TensorProduct)
+        self.algebra = None
+        for term in self.terms:
+            if isinstance(term, (YawOperator, TensorProduct)) and hasattr(term, 'algebra') and term.algebra is not None:
+                self.algebra = term.algebra
+                break
+        
         # Auto-normalize unless explicitly skipped (used internally by normalize())
         # Also check global flag for performance
         global _ENABLE_AUTO_NORMALIZATION
