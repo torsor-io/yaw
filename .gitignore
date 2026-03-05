@@ -51,3 +51,6 @@ htmlcov/
 scratch/
 test_output/
 .DS_Store
+
+# Notes
+notes/

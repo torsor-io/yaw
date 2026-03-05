@@ -15,7 +15,7 @@ from .yaw_prototype import *
 # Explicitly list main exports for clarity
 __all__ = [
     # Core classes
-    'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'Projector',
+    'YawOperator', 'TensorProduct', 'Algebra', 'TensorAlgebra', 'Context', 'Projector',
     
     # States
     'State', 'EigenState', 'TensorState', 'ConjugatedState',
@@ -35,10 +35,10 @@ __all__ = [
     'comm', 'acomm',
     
     # Algebras
-    'qudit', 'qubit',
+    'qudit', 'qubit', 'qudit_system', 'qubit_system',
     
     # QEC
-    'Encoding', 'rep', 'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
+    'Encoding', 'rep', 'StabilizerCode', 'AutoStabilizerCode', 'five_qubit_code', 'bit_flip_code', 'PauliVector',  'Pauli_group_iterator',
     
     # GNS construction (Hilbert space representations)
     'gnsVec', 'gnsMat'

@@ -13,10 +13,12 @@ from sympy.physics.quantum import Operator, Dagger
 from sympy import sqrt, expand, Mul, Add, Pow
 from sympy.core.numbers import Number as SympyNumber
 from typing import List, Tuple
+from functools import reduce
 
 import re
 import random
 import numpy as np
+import networkx as nx
 
 # ============================================================================
 # Global Normalization Control
@@ -133,7 +135,8 @@ def _numerical_algebra_ops(algebra):
 
 __version__ = "0.1.1"
 __all__ = [
-    'YawOperator', 'TensorProduct', 'Algebra', 'Context', 'qudit', 'qubit', 'matrix_units',
+    'YawOperator', 'TensorProduct', 'Algebra', 'TensorAlgebra', 'Context', 'qudit', 'qubit', 'qudit_system', 
+    'qubit_system', 'matrix_units', 
     'State', 'EigenState', 'TensorState', 'ConjugatedState', 
     'TransformedState', 'CollapsedState', 'TensorSum', 'SuperpositionState',
     'OpChannel', 'opChannel', 'StChannel', 'stChannel',
@@ -146,8 +149,8 @@ __all__ = [
     'norm', 'measure',  # Fourier sampling convenience functions
     'comm', 'acomm',
     'set_auto_normalization', 'DisableNormalization',  # Performance control
-    'StabilizerCode', 'five_qubit_code', 'bit_flip_code',
-    'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed',
+    'StabilizerCode', 'AutoStabilizerCode', 'five_qubit_code', 'bit_flip_code', 'PauliVector', 'Pauli_group_iterator',
+    'gnsVec', 'gnsMat', 'spec', 'minimal_poly', 'MixedState', 'mixed', 
     # Numerical qudit backend
     'ENABLE_NUMERICAL_QUDITS', '_numerical_algebra_ops', '_get_qudit_backend',
     '_NumericalEigenState', '_NumericalProjector', '_NumericalOperator',
@@ -679,7 +682,21 @@ class StabilizerCode:
         Returns:
             Correction operator, or None if syndrome not in table
         """
-        return self.error_table.get(syndrome)
+        if syndrome in self.error_table:
+            return self.error_table.get(syndrome)
+        else:
+            generators = np.array([s.to_pauli_vector() for s in self.stabilizers])
+            dim = len(next(iter(self.logical_ops.values())).factors)
+            for op in sorted(Pauli_group_iterator(dim), key=lambda i:i.weight):
+                computed_syndrome = tuple(op|g for g in generators)
+                if computed_syndrome == syndrome:
+                    self.error_table[syndrome] = op
+                    return op.to_yaw_operator()
+            raise ValueError(f"No operation in Pauli group produces syndrome {syndrome}.")
+
+
+
+
     
     def correct_error(self, state, syndrome=None):
         """Correct errors on a state.
@@ -708,6 +725,119 @@ class StabilizerCode:
         return f"StabilizerCode(name='{self.name}', n_stab={len(self.stabilizers)})"
 
 
+class AutoStabilizerCode(StabilizerCode):
+    def __init__(self, generators, logical_algebra, physical_algebra, name="Stabilizer Code", compute_errors=False):
+        self.pauli_vector_stabilizers = np.array([g.to_pauli_vector() for g in generators])
+        self.logical_algebra = logical_algebra
+        self.physical_algebra = physical_algebra
+        self.all_stabilizers = self._make_all_stabilizers()
+        self.physical_group_elements = np.fromiter(Pauli_group_iterator(len(physical_algebra.algebras)), dtype=PauliVector)
+        self.centralizer = self._make_centralizer()
+        self.quotient_group = self._make_quotient_group()
+        self.pauli_vector_logical_ops = self._make_logical_operators()
+        self.correctable_errors = np.array([])
+        self.error_to_syndrome_map = {}
+        self.syndrome_to_errors_map = {}
+        self.pauli_vector_error_table = {}
+        if compute_errors:
+            self.correctable_errors = self._make_correctable_errors()
+            self.error_to_syndrome_map = self._make_error_to_syndrome_map()
+            self.syndrome_to_errors_map = self._make_syndrome_to_errors_map()
+            self.pauli_vector_error_table = self._make_error_table()
+        yaw_logical_operators = self._to_yaw_logical_operators(self.pauli_vector_logical_ops)
+        yaw_error_table = self._to_yaw_error_table(self.pauli_vector_error_table)
+        encoding = Encoding(logical_algebra, physical_algebra, yaw_logical_operators)
+        super().__init__(generators, yaw_logical_operators, encoding, yaw_error_table, name)
+
+    def _make_all_stabilizers(self):
+        elements = self.pauli_vector_stabilizers.tolist()
+        ops_queue = self.pauli_vector_stabilizers
+        while len(ops_queue)>0:
+            candidates = np.unique(ops_queue[:,np.newaxis] * self.pauli_vector_stabilizers[np.newaxis,:])
+            new_elements = candidates[~np.isin(candidates, elements)]
+            elements.extend(new_elements.tolist())
+            ops_queue = new_elements
+        return np.array(sorted(elements, key=str))
+    
+    def _make_centralizer(self):
+        mask_commutating = np.any(self.physical_group_elements[:,np.newaxis]|self.pauli_vector_stabilizers[np.newaxis,:], axis=1)
+        return self.physical_group_elements[~mask_commutating]
+
+    def _make_quotient_group(self):
+        cosets = self.centralizer[:,np.newaxis] * self.all_stabilizers[np.newaxis,:]
+        return np.array(list({tuple(sorted(coset)) for coset in cosets}))
+    
+    def _make_logical_operators(self):
+        I, X, _, Z = PauliVector.Pauli_basis()
+        logical_operators = {}
+        for coset in self.quotient_group:
+            for op in coset:
+                if op.weight == 0:
+                    logical_operators[I] = op
+                    break
+                elif op.x_weight == len(op) and op.x_weight > op.z_weight:
+                    if X in logical_operators:
+                        if op.z_weight<logical_operators[X].z_weight:
+                            logical_operators[X] = op
+                    else:
+                        logical_operators[X] = op
+                elif op.z_weight == len(op) and op.z_weight > op.x_weight:
+                    if Z in logical_operators:
+                        if op.x_weight<logical_operators[Z].x_weight:
+                            logical_operators[Z] = op
+                    else:
+                        logical_operators[Z] = op                   
+        return logical_operators
+    
+    def _make_correctable_errors(self):
+        Z_minus_S = self.centralizer[~np.isin(self.centralizer, self.all_stabilizers)]
+        adjoint_errors = np.array([i.adjoint() for i in self.physical_group_elements])
+        error_mesh_1, error_mesh_2 = np.meshgrid(adjoint_errors, self.physical_group_elements, indexing="ij")
+        error_pairs = np.column_stack((error_mesh_1.ravel(), error_mesh_2.ravel()))
+        distinguishable_pairs = error_pairs[~np.isin(np.prod(error_pairs, axis=1), Z_minus_S)]
+    
+        error_graph = nx.Graph()
+        error_graph.add_edges_from(distinguishable_pairs)
+        all_cliques = list(nx.find_cliques(error_graph))
+        max_clique_len = len(max(all_cliques, key=len))
+        max_len_cliques = [clique for clique in all_cliques if len(clique)==max_clique_len]
+        
+        max_len_cliques_weights = [sum(i.weight for i in clique) for clique in max_len_cliques]
+        min_clique_weight = min(max_len_cliques_weights)
+        max_len_min_weight_cliques = sorted([clique for idx,clique in enumerate(max_len_cliques) if max_len_cliques_weights[idx]==min_clique_weight])
+        
+        _, X, _, Z = PauliVector.Pauli_basis()
+        correctable_errors = max_len_min_weight_cliques[0]
+        for clique in max_len_min_weight_cliques[1:]:
+            if all(s in clique for s in self.all_stabilizers):
+                if all((op.z!=self.pauli_vector_logical_ops[Z].z).any() and (op.x!=self.pauli_vector_logical_ops[X].x).any() for op in clique):
+                    correctable_errors = clique
+        return np.array(sorted(correctable_errors))
+
+    def _make_error_to_syndrome_map(self):
+        syndromes_array = map(tuple, self.correctable_errors[:,np.newaxis] | self.pauli_vector_stabilizers[np.newaxis,:])
+        return dict(zip(self.correctable_errors,syndromes_array))
+    
+    def _make_syndrome_to_errors_map(self):
+        error_table = {}
+        for error, syndrome in self.error_to_syndrome_map.items():
+            if syndrome in error_table:
+                error_table[syndrome].append(error)
+            else:
+                error_table[syndrome] = [error]
+        return error_table
+    
+    def _make_error_table(self):
+        return {syndrome:min(error_list, key=lambda e:(e.weight, e.x_weight+e.z_weight)) for syndrome, error_list in self.syndrome_to_errors_map.items()}
+    
+    @staticmethod
+    def _to_yaw_logical_operators(pauli_vector_dict):
+        return {str(i.to_yaw_operator()):j.to_yaw_operator() for i,j in pauli_vector_dict.items()}
+    
+    @staticmethod
+    def _to_yaw_error_table(pauli_vector_dict):
+        return {i:j.to_yaw_operator() for i,j in pauli_vector_dict.items()}
+    
 def five_qubit_code(algebra=None):
     """Five-qubit stabilizer code (smallest perfect code).
     
@@ -938,6 +1068,106 @@ def bit_flip_code(algebra=None):
     
     def __repr__(self):
         return f"rep({self.n})"
+
+
+class PauliVector:
+    def __init__(self, operator:list, phase:complex=1):
+        self.phase = phase
+        self.operator = operator
+        self.x = np.array(operator[0])
+        self.z = np.array(operator[1])
+
+    @property
+    def weight(self):
+        return np.sum(self.x|self.z)
+    @property
+    def x_weight(self):
+        return np.sum(self.x)
+    @property
+    def z_weight(self):
+        return np.sum(self.z)
+
+    @classmethod
+    def from_yaw_operator(cls, operator):
+        phase = 1
+        x,z = [0],[0]
+        for arg in operator._expr.args:
+            if arg.is_number:
+                phase *= arg
+            elif str(arg) == "X":
+                x[0] = 1
+            elif str(arg) == "Z":
+                z[0] = 1
+            elif str(arg) == "I":
+                pass
+            else:
+                raise TypeError(f"Operator {str(operator)} is not a Pauli string!")
+        return cls(operator = [x,z], phase=phase)
+
+    @classmethod
+    def from_yaw_tensor_product(cls, tensor_product):
+        pauli_vectors = [operator.to_pauli_vector() for operator in tensor_product.flatten().factors]
+        return reduce(lambda x,y:x@y, pauli_vectors)
+    
+    @classmethod
+    def Pauli_basis(cls):
+        return (cls([[0],[0]]), cls([[1],[0]]), cls([[1],[1]]), cls([[0],[1]]))
+    
+    def adjoint(self):
+        return self.__class__([self.x, self.z], self.phase.conjugate())
+
+    def to_yaw_operator(self):
+        qubit_alg = qubit()
+        I = YawOperator(Operator('I'), qubit_alg)
+        X = YawOperator(Operator('X'), qubit_alg)
+        Z = YawOperator(Operator('Z'), qubit_alg)
+        factors = [I * (X**x) * (Z**z) for x,z in zip(self.x, self.z)]
+        return reduce(lambda i,j:i@j, factors).normalize()
+
+    def __mul__(self, other):
+        """ Product (x|z) * (x'|z') = (x^x'|z^z') """
+        len_diff = len(self) - len(other)
+        if len_diff == 0:
+            product = [self.x^other.x, self.z^other.z]
+        elif len_diff > 0:
+            product = [self.x^np.pad(other.x, len_diff, constant_values=1), 
+                       self.z^np.pad(other.z, len_diff, constant_values=1)]
+        else:
+            product = [np.pad(self.x, -len_diff, constant_values=1)^other.x, 
+                       np.pad(self.z, -len_diff, constant_values=1)^other.z]
+        return self.__class__(product, self.phase*other.phase)
+    
+    def __rmul__(self, other):
+        """Scalar product (only affects phase)"""
+        return self.__class__(self.operator, self.phase*other)
+    
+    def __matmul__(self, other):
+        """ Tensor Product (x|z) @ (x'|z') = (x + x'|z + z') (extended)"""
+        return self.__class__([np.concatenate((self.x,other.x)), np.concatenate((self.z,other.z))], self.phase*other.phase)
+    
+    def __or__(self, other) -> int:
+        """ Binary Symplectic Inner Product For Commutativity Determination: (x|z) | (x'|z') = x⋅z' + x'⋅z """
+        return int((np.dot(self.x, other.z) + np.dot(other.x, self.z)) % 2)
+
+    def __len__(self):
+        return len(self.x)
+    
+    def __str__(self):
+        return f"[{str(self.x)[1:-1]}|{str(self.z)[1:-1]}]"
+        # return f"{self.phase}[{str(self.x)[1:-1]}|{str(self.z)[1:-1]}]"
+
+    def __repr__(self):
+        return str(self)
+
+    def __eq__(self, other):
+        return np.array_equal(self.x,other.x) and np.array_equal(self.z,other.z) and self.phase==other.phase
+    
+    def __hash__(self):
+        return hash(str(self))
+
+    def __lt__(self, other):
+        return str(self) < str(other)
+        
 
 
 
@@ -1540,6 +1770,9 @@ class YawOperator:
                 f"Wire indexing expects op[k] or op[k, n], got {len(index)} indices"
             )
         return WireSpec.single(self, index)
+
+    def to_pauli_vector(self) -> PauliVector:
+        return PauliVector.from_yaw_operator(self)
 
 # ============================================================================
 # COMMUTATORS AND ANTICOMMUTATORS
@@ -2380,6 +2613,12 @@ class TensorProduct:
             return TensorProduct(new_factors)
         else:
             raise TypeError(f"Cannot divide TensorProduct by {type(other)}")
+        
+    def __eq__(self, other):
+        if len(self.factors) == len(other.factors):
+            return all(op_self == op_other for op_self,op_other in zip(self.factors, other.factors))
+        else:
+            return False
     
     def adjoint(self):
         """Hermitian conjugate of tensor product: (A⊗B)† = A†⊗B†
@@ -2528,6 +2767,16 @@ class TensorProduct:
                 flat_factors.append(factor)
         
         return TensorProduct(flat_factors)
+    
+    def to_pauli_vector(self) -> PauliVector:
+        return PauliVector.from_yaw_tensor_product(self)
+    
+    def pauli_weight(self):
+        weight = 0
+        for factor in self.flatten().factors:
+            if str(factor) != "I":
+                weight += 1
+        return weight
     
     def __rshift__(self, other):
         """Operator conjugation for tensor products.
@@ -2813,7 +3062,7 @@ class Algebra:
         I: Identity operator
     """
     
-    def __init__(self, gens: List[str], rels: List[str], name: str = None):
+    def __init__(self, gens: List[str], rels: List[str], name: str|None = None):
         """Create algebra from generators and relations.
         
         Args:
@@ -3048,6 +3297,8 @@ class Algebra:
         
         if isinstance(expr, Mul):
             args = list(expr.args)
+            if all((arg.is_number or arg == sympy_I) for arg in args):
+                return expr
             new_args = [arg for arg in args if arg != sympy_I]
             
             if not new_args:
@@ -3504,7 +3755,34 @@ class Algebra:
         result = YawOperator(expr, self)
         self._normalize_cache[cache_key] = result
         return result
+    
+    def get_all_elements_without_scalars(self) -> list:
+        elements = list(self.generators.values())
+        ops_queue = elements[:]
+        queue_idx = 0
+        while queue_idx < len(ops_queue):
+            op = ops_queue[queue_idx]
+            for gen in self.generators.values():
+               for candidate in ((op*gen).normalize().remove_coeffs(), (gen*op).normalize().remove_coeffs()):
+                    if str(candidate) not in map(str, elements):
+                        elements.append(candidate)
+                        ops_queue.append(candidate)
+            queue_idx += 1
+        return sorted(elements, key=str, reverse=True)
 
+    def get_pauli_group_elements(self):
+        generators = np.array([g.to_pauli_vector() for g in self.generators.values()])
+        elements = generators.tolist()
+        ops_queue = generators
+        # coeffs = (1,-1, 1j, -1j)
+        while len(ops_queue)>0:
+            candidates = np.unique(ops_queue[:,np.newaxis] * generators[np.newaxis,:])
+            new_elements = candidates[~np.isin(candidates, np.array(elements))]
+            elements.extend(new_elements.tolist())
+            ops_queue = new_elements
+        # elements = [i for element in elements for i in (coeff*element for coeff in coeffs)]
+        return np.array(sorted(elements, key=str))
+    
     def __str__(self):
         """Human-readable string representation."""
         gens = ', '.join(self.generators.keys())
@@ -3532,10 +3810,80 @@ class Algebra:
         """Detailed representation."""
         return self.__str__()
     
+    def __matmul__(self, other):
+        """ Returns tensor product algebra using @ operator. """
+        if isinstance(other, Algebra):
+            return TensorAlgebra([self, other])
+        if isinstance(other, TensorAlgebra):
+            return TensorAlgebra([self] + other.algebras)
+        else:
+            raise TypeError(f"Cannot tensor Algebra with {type(other)}")
     @property
     def braiding_phase(self):
         """Alias for braid_phase (backward compatibility)."""
         return self.braid_phase
+        
+
+class TensorAlgebra:
+    def __init__(self, algebras:list[Algebra]):
+        self.algebras = algebras
+        self.relation_specs = [i.relation_specs for i in algebras]
+    
+        generators = {}
+        for (alg_idx, alg) in enumerate(algebras):
+            if alg_idx == 0:
+                I_suffix = reduce(lambda x,y:x@y, (i.I for i in algebras[alg_idx+1:]))
+                tensor_gen_func = lambda gen: gen @ I_suffix
+            elif alg_idx == len(algebras)-1:
+                I_prefix = reduce(lambda x,y:x@y, (i.I for i in algebras[:alg_idx]))
+                tensor_gen_func = lambda gen: I_prefix @ gen
+            else:
+                I_prefix = reduce(lambda x,y:x@y, (i.I for i in algebras[:alg_idx]))
+                I_suffix = reduce(lambda x,y:x@y, (i.I for i in algebras[alg_idx+1:]))
+                tensor_gen_func = lambda gen: I_prefix @ gen @ I_suffix
+            for gen in alg.generators.values():
+                tensor_gen = tensor_gen_func(gen).normalize()
+                generators[str(tensor_gen)] = tensor_gen
+
+        self.generators = generators
+        self.generator_names = list(generators.keys())
+        self.I = reduce(lambda x,y:x@y, (i.I for i in algebras))
+    
+    def get_all_elements_without_scalars(self) -> list:
+        elements = list(self.generators.values())
+        ops_queue = elements[:]
+        queue_idx = 0
+        while queue_idx < len(ops_queue):
+            op = ops_queue[queue_idx]
+            for gen in self.generators.values():
+               for candidate in ((op*gen).normalize().remove_coeffs(), (gen*op).normalize().remove_coeffs()):
+                    if str(candidate) not in map(str, elements):
+                        elements.append(candidate)
+                        ops_queue.append(candidate)
+            queue_idx += 1
+        return sorted(elements, key=str, reverse=True)
+
+    def get_pauli_group_elements(self):
+        generators = np.array([g.to_pauli_vector() for g in self.generators.values()])
+        elements = generators.tolist()
+        ops_queue = generators
+        # coeffs = (1,-1, 1j, -1j)
+        while len(ops_queue)>0:
+            candidates = np.unique(ops_queue[:,np.newaxis] * generators[np.newaxis,:])
+            new_elements = candidates[~np.isin(candidates, elements)]
+            elements.extend(new_elements.tolist())
+            ops_queue = new_elements
+        # elements = [i for element in elements for i in (coeff*element for coeff in coeffs)]
+        return np.array(sorted(elements, key=str))
+    
+    def __matmul__(self, other):
+        if isinstance(other, Algebra):
+            return self.__class__(self.algebras+[other])
+        elif isinstance(other, TensorAlgebra):
+            return self.__class__(self.algebras+other.algebras)
+        else:
+            raise TypeError(f"Cannot tensor TensorAlgebra with {type(other)}")
+
 
 def qudit(d = 2, symbolic=True):
     """Create d-level qudit algebra.
@@ -3589,6 +3937,18 @@ def qudit(d = 2, symbolic=True):
 
 def qubit():
     return qudit(2)
+
+def qudit_system(d:int, num_qudits:int):
+    return reduce(lambda x,y:x@y, (qudit(d) for _ in range(num_qudits)))
+
+def qubit_system(num_qudits:int):
+    return reduce(lambda x,y:x@y, (qubit() for _ in range(num_qudits)))
+
+def Pauli_group_iterator(n:int):
+    """ Returns an iterator for elements of the n-dim Pauli Group """
+    from itertools import product as itertools_product
+    pauli_strings = itertools_product(PauliVector.Pauli_basis(), repeat=n)
+    return (reduce(lambda i,j:i@j, op) for op in pauli_strings)
 
 def matrix_units(d):
     """Create algebra of d×d matrix units E_{a,b} = |a⟩⟨b|.
