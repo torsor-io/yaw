@@ -688,7 +688,7 @@ class StabilizerCode:
             generators = np.array([s.to_pauli_vector() for s in self.stabilizers])
             dim = len(next(iter(self.logical_ops.values())).factors)
             for op in sorted(Pauli_group_iterator(dim), key=lambda i:i.weight):
-                computed_syndrome = tuple(op|g for g in generators)
+                computed_syndrome = tuple(-2*(op|g)+1 for g in generators)
                 if computed_syndrome == syndrome:
                     self.error_table[syndrome] = op
                     return op.to_yaw_operator()
