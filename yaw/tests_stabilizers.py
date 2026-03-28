@@ -15,12 +15,12 @@ if __name__ == "__main__":
     name = "Bit-Flip Code"
     physical_alg = qubit_system(3)
     stabilizer_generators = [Z @ Z @ I, I @ Z @ Z]
-    example_syndrome = (1,0)
+    example_syndrome = (-1,1)
 
     # name = "Phase-Flip Code"
     # physical_alg = qubit_system(3)
     # stabilizer_generators = [X @ X @ I, I @ X @ X]
-    # example_syndrome = (1,1)
+    # example_syndrome = (-1,-1)
 
     # name = "Five-Qubit Code"
     # physical_alg = qubit_system(5)
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     #                          I @ X @ Z @ Z @ X,
     #                          X @ I @ X @ Z @ Z,
     #                          Z @ X @ I @ X @ Z]
-    # example_syndrome = (1,1,0,0)
+    # example_syndrome = (-1,-1,1,1)
 
     # name = "Steane Code"
     # physical_alg = qubit_system(7)
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     #                          I @ I @ I @ X @ X @ X @ X,
     #                          I @ X @ X @ I @ I @ X @ X,
     #                          X @ I @ X @ I @ X @ I @ X]
-    # example_syndrome = (1,1,1,1,1,1)
+    # example_syndrome = (-1,-1,-1,-1,-1,-1)
 
     # name = "Shor Code"
     # physical_alg = qubit_system(9)
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     #                          I @ I @ I @ I @ I @ I @ I @ Z @ Z,
     #                          X @ X @ X @ X @ X @ X @ I @ I @ I,
     #                          I @ I @ I @ X @ X @ X @ X @ X @ X]
-    # example_syndrome = (0,0,0,0,0,0,0,1)
+    # example_syndrome = (1,1,1,1,1,1,1,-1)
 
     stabilizer_code = AutoStabilizerCode(stabilizer_generators, logical_alg, physical_alg, name, compute_errors)
     correction_operator = stabilizer_code.lookup_correction(example_syndrome)
